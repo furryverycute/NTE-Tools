@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QThread, QTimer, Signal, Qt
+from PySide6.QtCore import QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -12,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.updater import fetch_latest_release, install_update
+from app.updater import fetch_latest_release, install_kind_label, install_update, select_asset
 from app.version import APP_VERSION, GITHUB_RELEASES_URL, GITHUB_REPO
 
 
@@ -26,13 +25,12 @@ class UpdateCheckWorker(QThread):
 class UpdateInstallWorker(QThread):
     completed = Signal(dict)
 
-    def __init__(self, release: dict, mode: str):
+    def __init__(self, release: dict):
         super().__init__()
         self.release = release
-        self.mode = mode
 
     def run(self):
-        self.completed.emit(install_update(self.release, self.mode))
+        self.completed.emit(install_update(self.release))
 
 
 class SettingsPage(QWidget):
@@ -69,17 +67,9 @@ class SettingsPage(QWidget):
         repo_label.setOpenExternalLinks(True)
         card_layout.addWidget(repo_label)
 
-        mode_row = QHBoxLayout()
-        mode_row.setSpacing(8)
-        mode_label = QLabel('업데이트 방식')
-        mode_label.setObjectName('Muted')
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem('자동 선택', 'auto')
-        self.mode_combo.addItem('설치형 exe', 'installer')
-        self.mode_combo.addItem('포터블', 'portable')
-        mode_row.addWidget(mode_label)
-        mode_row.addWidget(self.mode_combo, 1)
-        card_layout.addLayout(mode_row)
+        self.install_kind_label = QLabel(f'감지된 실행 방식: {install_kind_label()}')
+        self.install_kind_label.setObjectName('Muted')
+        card_layout.addWidget(self.install_kind_label)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
@@ -133,13 +123,19 @@ class SettingsPage(QWidget):
         assets = result.get('assets') or []
         installer_count = sum(1 for asset in assets if asset.get('type') == 'installer')
         portable_count = sum(1 for asset in assets if asset.get('type') == 'portable')
-        self.assets_label.setText(f'감지된 릴리스 파일: 설치형 {installer_count}개 / 포터블 {portable_count}개')
+        self.assets_label.setText(
+            f'감지된 릴리스 파일: 설치형 {installer_count}개 / 포터블 {portable_count}개\n'
+            f'현재 실행 방식: {install_kind_label()}'
+        )
 
         if not result.get('update_available'):
             self.status_label.setText(f'최신 버전입니다. 최신 릴리스: {tag}')
             return
         if not assets:
             self.status_label.setText(f'새 릴리스 {tag}가 있지만 지원되는 설치형/포터블 파일이 없습니다.')
+            return
+        if not select_asset(result):
+            self.status_label.setText(f'새 릴리스 {tag}가 있지만 현재 실행 방식({install_kind_label()})에 맞는 파일이 없습니다.')
             return
 
         self.pending_release = result
@@ -151,8 +147,8 @@ class SettingsPage(QWidget):
             return
         self.update_btn.setEnabled(False)
         self.update_btn.setText('업데이트 중...')
-        self.status_label.setText('업데이트 파일을 다운로드하고 설치하는 중입니다.')
-        self.install_worker = UpdateInstallWorker(self.pending_release, self.mode_combo.currentData() or 'auto')
+        self.status_label.setText(f'{install_kind_label()} 업데이트 파일을 다운로드하고 설치하는 중입니다.')
+        self.install_worker = UpdateInstallWorker(self.pending_release)
         self.install_worker.completed.connect(self.on_install_completed)
         self.install_worker.start()
 

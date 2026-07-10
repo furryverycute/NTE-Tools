@@ -577,14 +577,15 @@ class LoadoutPage(QWidget):
         ark_effect_box.setMaximumWidth(420)
         effect_layout = QVBoxLayout(ark_effect_box)
         effect_layout.setContentsMargins(12, 10, 12, 10)
-        effect_layout.setSpacing(4)
+        effect_layout.setSpacing(2)
         effect_title = QLabel('아크 효과')
         effect_title.setObjectName('LoadoutOptionGroupTitle')
         self.top_ark_effect = QLabel('-')
         self.top_ark_effect.setObjectName('Muted')
-        self.top_ark_effect.setWordWrap(False)
+        self.top_ark_effect.setWordWrap(True)
+        self.top_ark_effect.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         effect_layout.addWidget(effect_title)
-        effect_layout.addWidget(self.top_ark_effect)
+        effect_layout.addWidget(self.top_ark_effect, 1)
         layout.addWidget(ark_effect_box, 1)
 
         self.special_top_box = QFrame()
@@ -1725,6 +1726,7 @@ class LoadoutPage(QWidget):
     def _final_stat_lines(self) -> list[str]:
         ch = self.character()
         ark = self.ark()
+        cartridge = self.cartridge()
         progress = self.promotion_progress()
         lines = [
             f"캐릭터: {ch.get('name', '-') if ch else '-'}",
@@ -1839,7 +1841,7 @@ class LoadoutPage(QWidget):
         if not ark:
             return
         effect = ark.get('effect') or ark.get('description') or ''
-        self.top_ark_effect.setText(text_cut(effect, 85))
+        self.top_ark_effect.setText(text_cut(effect, 130))
 
     def refresh_cartridge_panel(self):
         cartridge = self.cartridge()

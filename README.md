@@ -43,7 +43,7 @@ build_release_assets.bat
 - `NTE-Tool-v41-installer.exe`: 설치형 exe
 - `NTE-Tool-v41-portable.zip`: 포터블 배포 파일
 
-설정 탭의 업데이트 기능은 GitHub 릴리스에서 `installer/setup/install`이 들어간 exe/msi를 설치형으로, `portable`이 들어간 zip/exe를 포터블로 인식합니다.
+설정 탭의 업데이트 기능은 현재 실행 중인 앱이 설치형인지 포터블인지 자동으로 감지하고, GitHub 릴리스에서 같은 방식의 파일만 받아 설치합니다.
 
 ## 포터블 Tesseract 구조
 

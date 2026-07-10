@@ -25,6 +25,27 @@ def app_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def installed_app_root() -> Path:
+    return Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'NTE Tool' / 'NTE Tool Demo'
+
+
+def install_kind() -> str:
+    if not getattr(sys, 'frozen', False):
+        return 'portable'
+    try:
+        root = app_root().resolve()
+        installed = installed_app_root().resolve()
+        if root == installed or installed in root.parents:
+            return 'installer'
+    except Exception:
+        pass
+    return 'portable'
+
+
+def install_kind_label() -> str:
+    return '설치형 exe' if install_kind() == 'installer' else '포터블'
+
+
 def version_key(value: str) -> tuple[int, ...]:
     numbers = re.findall(r'\d+', value or '')
     return tuple(int(number) for number in numbers) if numbers else (0,)
@@ -84,16 +105,15 @@ def classify_asset(name: str) -> str:
     return ''
 
 
-def select_asset(release: dict[str, Any], mode: str = 'auto') -> dict[str, Any] | None:
+def select_asset(release: dict[str, Any], mode: str | None = None) -> dict[str, Any] | None:
     assets = release.get('assets') or []
     installers = [asset for asset in assets if asset.get('type') == 'installer']
     portables = [asset for asset in assets if asset.get('type') == 'portable']
+    mode = mode or install_kind()
     if mode == 'installer':
         return installers[0] if installers else None
     if mode == 'portable':
         return portables[0] if portables else None
-    if getattr(sys, 'frozen', False) and installers:
-        return installers[0]
     return (portables or installers or [None])[0]
 
 
@@ -176,10 +196,11 @@ def launch_path(path: Path):
         subprocess.Popen([str(path)], cwd=str(path.parent))
 
 
-def install_update(release: dict[str, Any], mode: str = 'auto') -> dict[str, Any]:
+def install_update(release: dict[str, Any]) -> dict[str, Any]:
+    mode = install_kind()
     asset = select_asset(release, mode)
     if not asset:
-        return {'ok': False, 'message': '선택한 방식에 맞는 릴리스 파일이 없습니다.'}
+        return {'ok': False, 'message': f'현재 실행 방식({install_kind_label()})에 맞는 릴리스 파일이 없습니다.'}
 
     tag = release.get('tag_name') or 'latest'
     work_dir = local_update_root() / safe_name(tag)

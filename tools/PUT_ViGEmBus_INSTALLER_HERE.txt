@@ -1,0 +1,5 @@
+Optional manual driver installer location:
+
+ViGEmBus_1.22.0_x64_x86_arm64.exe
+
+vgamepad installation may start the ViGEmBus installer automatically. If it does not, place the ViGEmBus installer in this folder and run it manually with administrator permission before using automatic bag scan.

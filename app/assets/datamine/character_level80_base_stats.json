@@ -1,0 +1,275 @@
+[
+  {
+    "id": "1003",
+    "name": "사키리",
+    "rarity": 5,
+    "element": "주",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "16483",
+      "공격력": "620",
+      "방어력": "909"
+    }
+  },
+  {
+    "id": "1004",
+    "name": "라크리모사",
+    "rarity": 5,
+    "element": "암",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "15998",
+      "공격력": "636",
+      "방어력": "909"
+    }
+  },
+  {
+    "id": "1008",
+    "name": "스키아",
+    "rarity": 4,
+    "element": "상",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "13332",
+      "공격력": "557",
+      "방어력": "667"
+    }
+  },
+  {
+    "id": "1010",
+    "name": "나나리",
+    "rarity": 5,
+    "element": "령",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "15998",
+      "공격력": "636",
+      "방어력": "909"
+    }
+  },
+  {
+    "id": "1019",
+    "name": "민트",
+    "rarity": 4,
+    "element": "령",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "12120",
+      "공격력": "596",
+      "방어력": "727"
+    }
+  },
+  {
+    "id": "1020",
+    "name": "하니엘",
+    "rarity": 4,
+    "element": "혼",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "13696",
+      "공격력": "493",
+      "방어력": "848"
+    }
+  },
+  {
+    "id": "1021",
+    "name": "에드가",
+    "rarity": 4,
+    "element": "빛",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "16362",
+      "공격력": "421",
+      "방어력": "824"
+    }
+  },
+  {
+    "id": "1023",
+    "name": "백장",
+    "rarity": 5,
+    "element": "주",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "16604",
+      "공격력": "644",
+      "방어력": "800"
+    }
+  },
+  {
+    "id": "1025",
+    "name": "하토르",
+    "rarity": 5,
+    "element": "상",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "15998",
+      "공격력": "644",
+      "방어력": "884"
+    }
+  },
+  {
+    "id": "1033",
+    "name": "아들러",
+    "rarity": 4,
+    "element": "주",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "14302",
+      "공격력": "437",
+      "방어력": "994"
+    }
+  },
+  {
+    "id": "1039",
+    "name": "파디아",
+    "rarity": 5,
+    "element": "혼",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "17089",
+      "공격력": "596",
+      "방어력": "909"
+    }
+  },
+  {
+    "id": "1046",
+    "name": "「제로」",
+    "rarity": 5,
+    "element": "빛",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "15150",
+      "공격력": "676",
+      "방어력": "909"
+    }
+  },
+  {
+    "id": "1052",
+    "name": "호토리",
+    "rarity": 5,
+    "element": "빛",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "16120",
+      "공격력": "652",
+      "방어력": "848"
+    }
+  },
+  {
+    "id": "1054",
+    "name": "다포딜",
+    "rarity": 5,
+    "element": "암",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "16180",
+      "공격력": "644",
+      "방어력": "873"
+    }
+  },
+  {
+    "id": "1055",
+    "name": "구원",
+    "rarity": 5,
+    "element": "령",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "15635",
+      "공격력": "652",
+      "방어력": "909"
+    }
+  },
+  {
+    "id": "1070",
+    "name": "우미츠키",
+    "rarity": 4,
+    "element": "혼",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "11878",
+      "공격력": "604",
+      "방어력": "727"
+    }
+  },
+  {
+    "id": "1073",
+    "name": "치즈",
+    "rarity": 5,
+    "element": "빛",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "15514",
+      "공격력": "660",
+      "방어력": "909"
+    }
+  },
+  {
+    "id": "1071",
+    "name": "카오스",
+    "rarity": 5,
+    "element": "Chaos",
+    "sourceUrl": "https://everness.info/ko/espers/1071",
+    "sourcePending": true,
+    "level80": {
+      "HP": "0",
+      "공격력": "0",
+      "방어력": "0"
+    }
+  },
+  {
+    "id": "1076",
+    "name": "신쿠",
+    "rarity": 5,
+    "element": "Cosmos",
+    "sourceUrl": "https://everness.info/ko/espers/1076",
+    "sourcePending": true,
+    "level80": {
+      "HP": "0",
+      "공격력": "0",
+      "방어력": "0"
+    }
+  },
+  {
+    "id": "1075",
+    "name": "일로이",
+    "rarity": 5,
+    "element": "Psyche",
+    "sourceUrl": "https://everness.info/ko/espers/1075",
+    "sourcePending": true,
+    "level80": {
+      "HP": "0",
+      "공격력": "0",
+      "방어력": "0"
+    }
+  },
+  {
+    "id": "1051",
+    "name": "「제로」",
+    "rarity": 5,
+    "element": "빛",
+    "sourceUrl": "",
+    "sourcePending": false,
+    "level80": {
+      "HP": "15150",
+      "공격력": "676",
+      "방어력": "909"
+    }
+  }
+]

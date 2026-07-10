@@ -1,0 +1,102 @@
+{
+  "version": "v35-tesseract-kor-eng-psm6-benchmark-14",
+  "source": "NTE 14 detail crops benchmark, Tesseract v5 kor+eng --psm 6",
+  "tesseract": {
+    "lang": "kor+eng",
+    "psm": 6,
+    "oem": 1,
+    "preprocess": "soft grayscale, autocontrast, contrast 1.90, sharpness 2.25, per-region composite OCR"
+  },
+  "replacements": {
+    "공 격 력": "공격력",
+    "공 격력": "공격력",
+    "공격 력": "공격력",
+    "방 어 력": "방어력",
+    "방 어력": "방어력",
+    "방어 력": "방어력",
+    "피 해": "피해",
+    "치 명 확 률": "치명 확률",
+    "치명 확 률": "치명 확률",
+    "치 명 피해": "치명 피해",
+    "치 명 피 해": "치명 피해",
+    "붕 괴 강 도": "붕괴 강도",
+    "붕괴 강 도": "붕괴 강도",
+    "사 이 클 강 도": "사이클 강도",
+    "사이클 강 도": "사이클 강도",
+    "드라이브 모듈": "드라이브 모듈",
+    "드라이브모듈": "드라이브 모듈",
+    "카드리지": "카트리지",
+    "잃어버린 빚": "잃어버린 빛",
+    "빗속성": "빛속성",
+    "빛 속성": "빛속성",
+    "SAA+2.50%": "공격력+2.50%",
+    "SAH+2.50%": "공격력+2.50%",
+    "SAl+2.50%": "공격력+2.50%",
+    "SAL+2.50%": "공격력+2.50%",
+    "S4H+2.50%": "공격력+2.50%",
+    "치명 피해+44.00%": "치명 피해+4.00%",
+    "치명 피해+44.0%": "치명 피해+4.00%",
+    "치명피해+44.00%": "치명 피해+4.00%",
+    "치명피해+44.0%": "치명 피해+4.00%",
+    "+44.00%": "+4.00%",
+    "+44.0%": "+4.00%",
+    "||형": "II형",
+    "| |형": "II형",
+    "1] 드라이브": "II형 드라이브",
+    "1]드라이브": "II형드라이브",
+    "l] 드라이브": "II형 드라이브",
+    "l]드라이브": "II형드라이브",
+    "그겨려": "공격력",
+    "공겨려": "공격력"
+  },
+  "known_value_rules": [
+    {
+      "pattern": "+4.00% or +44.00%",
+      "option_id": "CritDamageBase",
+      "label": "치명 피해"
+    },
+    {
+      "pattern": "+2.50% without HP/방어/치명/피해 glyphs",
+      "option_id": "AtkUp",
+      "label": "공격력%"
+    },
+    {
+      "pattern": "HP+2.50%",
+      "option_id": "HPMaxUp",
+      "label": "HP%"
+    },
+    {
+      "pattern": "방어력+3.50%",
+      "option_id": "DefUp",
+      "label": "방어력%"
+    },
+    {
+      "pattern": "피해+2.00%",
+      "option_id": "DamageUpGeneralBase",
+      "label": "피해"
+    },
+    {
+      "pattern": "치명 확률+2.00%",
+      "option_id": "CritBase",
+      "label": "치명 확률"
+    },
+    {
+      "pattern": "사이클 강도+12",
+      "option_id": "MagBase",
+      "label": "사이클 강도"
+    },
+    {
+      "pattern": "붕괴 강도+12",
+      "option_id": "UnbalIntensityBase",
+      "label": "붕괴 강도"
+    }
+  ],
+  "benchmark_result": {
+    "images": 14,
+    "engine": "Tesseract 5.5.0 kor+eng --psm 6",
+    "time_seconds": 10.2,
+    "time_minutes": 0.17,
+    "raw_stat_accuracy": "96.9%",
+    "postprocess_target": "Tesseract output normalization + value-based option parsing"
+  }
+}

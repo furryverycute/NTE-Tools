@@ -1,0 +1,12 @@
+# Optional packages for Windows inventory auto-scan.
+# Run setup.bat when using bag OCR scan.
+vgamepad>=0.1.0
+mss>=9.0.0
+Pillow>=10.0.0
+opencv-python>=4.8.0
+numpy>=1.24
+pywin32>=306
+
+# Default OCR backend is app-local Tesseract OCR v5 (kor+eng).
+# setup.bat prepares the portable runtime when needed.
+# Python wrapper is not required; the app calls tesseract.exe directly.

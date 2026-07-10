@@ -37,7 +37,7 @@ def state_file(include_build: bool = False) -> Path:
     return Path(sys.prefix) / f'.nte_requirements_{suffix}.sha256'
 
 
-def sync_requirements(include_build: bool = False, force: bool = False) -> bool:
+def sync_requirements(include_build: bool = False, force: bool = False, prepare_scanner_assets: bool = True) -> bool:
     root = project_root()
     files = selected_requirement_files(root, include_build=include_build)
     if not files:
@@ -48,6 +48,8 @@ def sync_requirements(include_build: bool = False, force: bool = False) -> bool:
     marker = state_file(include_build=include_build)
     if not force and marker.exists() and marker.read_text(encoding='utf-8').strip() == current_hash:
         print('[requirements] Requirement files unchanged. Skipping pip install.')
+        if prepare_scanner_assets:
+            prepare_optional_scanner_assets()
         return True
 
     print('[requirements] Installing updated requirements...')
@@ -58,15 +60,33 @@ def sync_requirements(include_build: bool = False, force: bool = False) -> bool:
     subprocess.check_call(cmd)
     marker.write_text(current_hash, encoding='utf-8')
     print('[requirements] Requirement sync complete.')
+    if prepare_scanner_assets:
+        prepare_optional_scanner_assets()
     return True
+
+
+def prepare_optional_scanner_assets() -> None:
+    try:
+        from app.scanner.runtime_setup import ensure_controller_installer
+
+        installer = ensure_controller_installer(download=True)
+        if installer:
+            print(f'[scanner] Controller installer ready: {installer}')
+    except Exception as exc:
+        print(f'[scanner] Controller installer preparation skipped: {exc}')
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--include-build', action='store_true')
     parser.add_argument('--force', action='store_true')
+    parser.add_argument('--skip-scanner-assets', action='store_true')
     args = parser.parse_args(argv)
-    sync_requirements(include_build=args.include_build, force=args.force)
+    sync_requirements(
+        include_build=args.include_build,
+        force=args.force,
+        prepare_scanner_assets=not args.skip_scanner_assets,
+    )
     return 0
 
 

@@ -293,13 +293,17 @@ SLOT_META = {
     1055: {'slot_id': 'EquipmentSlots_kuhara', 'owner_grid_count': 2},
     1070: {'slot_id': 'EquipmentSlots_mitsuki', 'owner_grid_count': 3},
     1073: {'slot_id': 'EquipmentSlots_chiichan', 'owner_grid_count': 3},
+    1071: {'slot_id': 'EquipmentSlots_Kaos', 'owner_grid_count': 3},
+    1076: {'slot_id': 'EquipmentSlots_Zhenhong', 'owner_grid_count': 3},
+    1075: {'slot_id': 'EquipmentSlots_Yiluoyi', 'owner_grid_count': 3},
     'default': {'slot_id': 'EquipmentSlots_Sagiri', 'owner_grid_count': 3},
 }
 ELEMENT_LABELS = {
-    'Incantation': '주술',
-    'Chaos': '혼돈',
+    'Incantation': '주',
+    'Chaos': '암',
     'Lakshana': '상',
-    'Nature': '자연',
-    'Psyche': '정신',
-    'Cosmos': '우주',
+    'Nature': '령',
+    'Anima': '령',
+    'Psyche': '혼',
+    'Cosmos': '빛',
 }

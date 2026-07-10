@@ -8,7 +8,7 @@ set PIP_DISABLE_PIP_VERSION_CHECK=1
 chcp 65001 >nul 2>nul
 
 echo ===============================================
-echo NTE Tool Python Edition - Fast Demo Runner
+echo NTE Tool - Runner
 echo ===============================================
 echo.
 echo [INFO] Working directory: %CD%
@@ -34,7 +34,7 @@ echo [2/3] Checking runtime requirements...
 ".venv\Scripts\python.exe" -m app.requirements_sync
 if errorlevel 1 goto :error
 
-echo [3/3] Starting demo app...
+echo [3/3] Starting app...
 ".venv\Scripts\python.exe" app\main.py
 if errorlevel 1 goto :error
 
@@ -42,7 +42,7 @@ exit /b 0
 
 :error
 echo.
-echo [ERROR] Demo failed.
+echo [ERROR] App failed.
 echo Run check_env.bat and send the output.
 pause
 exit /b 1

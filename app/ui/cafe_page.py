@@ -381,8 +381,6 @@ class CafePage(QWidget):
         control_row.addWidget(interior_panel, 1)
 
         action_panel = self._control_panel('계산 / 프리셋')
-        calculate_button = QPushButton('자동 최적화 실행')
-        calculate_button.setObjectName('PrimaryButton')
         all_lv5 = QPushButton('전원 Lv.5')
         all_lv0 = QPushButton('전원 Lv.0')
         all_on = QPushButton('전원 ON')
@@ -391,7 +389,6 @@ class CafePage(QWidget):
         action_buttons.addWidget(all_lv5)
         action_buttons.addWidget(all_lv0)
         action_buttons.addWidget(all_on)
-        action_panel.layout.addWidget(calculate_button)
         action_panel.layout.addLayout(action_buttons)
         control_row.addWidget(action_panel, 1)
 
@@ -399,7 +396,6 @@ class CafePage(QWidget):
         bottom.addLayout(condition_right, 1)
         root.addLayout(bottom, 3)
 
-        calculate_button.clicked.connect(self.calculate)
         all_lv5.clicked.connect(partial(self.set_all_levels, 5))
         all_lv0.clicked.connect(partial(self.set_all_levels, 0))
         all_on.clicked.connect(self.set_all_on)

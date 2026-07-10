@@ -1,4 +1,4 @@
-# NTE Tool Python Demo v41
+# NTE Tool 1.4.2
 
 Neverness To Everness 편의 도구입니다.
 
@@ -27,10 +27,10 @@ setup.bat "C:\Program Files\Tesseract-OCR"
 ## 실행
 
 ```bat
-run_demo.bat
+run_app.bat
 ```
 
-`run_demo.bat`도 requirements 변경을 감지해 실행 전에 자동 동기화합니다.
+`run_app.bat`도 requirements 변경을 감지해 실행 전에 자동 동기화합니다.
 
 ## 릴리스 파일 생성
 
@@ -40,8 +40,10 @@ build_release_assets.bat
 
 완료되면 `release` 폴더에 두 파일이 생성됩니다.
 
-- `NTE-Tool-v41-installer.exe`: 설치형 exe
-- `NTE-Tool-v41-portable.zip`: 포터블 배포 파일
+- `NTE-Tool-1.4.2-installer.exe`: 설치형 exe
+- `NTE-Tool-1.4.2-portable.zip`: 포터블 배포 파일
+
+설치형 exe는 Inno Setup 기반 설치 마법사입니다. 설치 중 ViGEmBus 가상 컨트롤러 드라이버와 Tesseract OCR 런타임 설치 동의가 필수이며, 동의하지 않으면 설치 마법사가 종료됩니다.
 
 설정 탭의 업데이트 기능은 현재 실행 중인 앱이 설치형인지 포터블인지 자동으로 감지하고, GitHub 릴리스에서 같은 방식의 파일만 받아 설치합니다.
 

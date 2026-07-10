@@ -8,7 +8,7 @@ set PIP_DISABLE_PIP_VERSION_CHECK=1
 chcp 65001 >nul 2>nul
 
 echo ===============================================
-echo NTE Tool Python Edition - Release Assets
+echo NTE Tool - Release Assets
 echo ===============================================
 echo.
 

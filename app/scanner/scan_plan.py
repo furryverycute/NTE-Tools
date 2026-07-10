@@ -33,7 +33,8 @@ def build_console_scan_plan(total_count: int, columns: int = GRID_COLUMNS, safe_
     last_row_would_rtl = partial_last_row and (last_row_index % 2 == 1)
     tail_start = row_count
     if last_row_would_rtl:
-        tail_start = max(0, row_count - max(2, safe_tail_rows))
+        tail_rows = safe_tail_row_count(remainder, columns, safe_tail_rows)
+        tail_start = max(0, row_count - tail_rows)
 
     steps: list[ScanStep] = []
     for row in range(row_count):
@@ -63,6 +64,23 @@ def build_console_scan_plan(total_count: int, columns: int = GRID_COLUMNS, safe_
     return steps
 
 
+def safe_tail_row_count(remainder: int, columns: int = GRID_COLUMNS, safe_tail_rows: int = SAFE_TAIL_ROWS) -> int:
+    """Return how many final rows should switch from snake to safe LTR scan.
+
+    The risky case is an incomplete final row that would be entered from the
+    right side.  If that final row has only a few items, the cursor can drift
+    into empty cells before the app sees the intended DOWN/LEFT sequence.  Use
+    three safe rows for short tails and two rows for longer tails.
+    """
+    columns = max(1, int(columns))
+    if remainder <= 0:
+        return 0
+    max_rows = max(2, min(3, int(safe_tail_rows or SAFE_TAIL_ROWS)))
+    if remainder <= max(1, columns // 2):
+        return max_rows
+    return min(2, max_rows)
+
+
 def describe_scan_plan(total_count: int) -> str:
     steps = build_console_scan_plan(total_count)
     if not steps:
@@ -72,5 +90,5 @@ def describe_scan_plan(total_count: int) -> str:
     return (
         f'총 {total_count}개 / 7열 / {rows}줄 스캔 계획\n'
         f'마지막 줄 보정 대상: {tail_count}칸\n'
-        '마지막 줄이 우→좌 부분 줄로 끝날 경우, 마지막 2~3줄은 S자가 아닌 좌→우 안전 스캔으로 전환합니다.'
+        '마지막 줄이 우→좌 부분 줄로 끝날 경우, 남은 칸 수에 따라 마지막 2~3줄을 좌→우 안전 스캔으로 전환합니다.'
     )

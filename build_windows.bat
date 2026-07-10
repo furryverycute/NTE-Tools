@@ -8,7 +8,7 @@ set PIP_DISABLE_PIP_VERSION_CHECK=1
 chcp 65001 >nul 2>nul
 
 echo ===============================================
-echo NTE Tool Python Edition - Folder EXE Build
+echo NTE Tool - Folder EXE Build
 echo ===============================================
 echo.
 
@@ -33,11 +33,11 @@ echo [2/4] Checking build requirements...
 if errorlevel 1 goto :error
 
 echo [3/4] Building folder EXE...
-".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean nte_tool_demo.spec
+".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean nte_tool.spec
 if errorlevel 1 goto :error
 
 echo [4/4] Done.
-echo Output: dist\NTE Tool Demo\NTE Tool Demo.exe
+echo Output: dist\NTE Tool\NTE Tool.exe
 pause
 exit /b 0
 

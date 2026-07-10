@@ -8,7 +8,7 @@ set PIP_DISABLE_PIP_VERSION_CHECK=1
 chcp 65001 >nul 2>nul
 
 echo ===============================================
-echo NTE Tool Python Edition - Onefile EXE Build
+echo NTE Tool - Onefile EXE Build
 echo ===============================================
 echo.
 
@@ -35,11 +35,11 @@ if errorlevel 1 goto :error
 echo [3/4] Building onefile EXE...
 set TESS_ADD_DATA=
 if exist "tools\tesseract\tesseract.exe" set TESS_ADD_DATA=--add-data "tools\tesseract;tools\tesseract"
-".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --windowed --name "NTE Tool Demo" --icon "app\assets\icon.ico" --add-data "app\assets;app\assets" %TESS_ADD_DATA% app\main.py
+".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --windowed --name "NTE Tool" --icon "app\assets\icon.ico" --add-data "app\assets;app\assets" %TESS_ADD_DATA% app\main.py
 if errorlevel 1 goto :error
 
 echo [4/4] Done.
-echo Output: dist\NTE Tool Demo.exe
+echo Output: dist\NTE Tool.exe
 pause
 exit /b 0
 

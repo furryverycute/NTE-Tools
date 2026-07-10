@@ -794,7 +794,7 @@ QScrollArea#LoadoutModuleScroll, QWidget#LoadoutModuleScrollViewport {
 
 
 APP_QSS += """
-/* Loadout scanner v0.5 */
+/* Loadout panel */
 QFrame#LoadoutScannerPanel {
     background: #151d2f;
     border: 1px solid #314465;

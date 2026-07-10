@@ -50,7 +50,15 @@ class VirtualGamepadController:
         try:
             self.pad = vg.VX360Gamepad()
         except Exception as exc:
-            raise RuntimeError('ViGEmBus 가상 패드를 만들 수 없습니다. ViGEmBus_1.22.0_x64_x86_arm64.exe 설치 상태를 확인하세요.') from exc
+            try:
+                from app.scanner.runtime_setup import ensure_controller_installer, launch_controller_installer
+
+                installer = ensure_controller_installer(download=True)
+                if installer:
+                    launch_controller_installer(installer)
+            except Exception:
+                pass
+            raise RuntimeError('ViGEmBus 가상 패드를 만들 수 없습니다. ViGEmBus 설치 창을 열었으면 설치를 완료한 뒤 다시 스캔하세요.') from exc
         self.press_seconds = press_seconds
         self.settle_seconds = settle_seconds
         self.pad.reset()

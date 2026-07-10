@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from functools import partial
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal, QSize, QThread
 from PySide6.QtGui import QBrush, QColor, QIcon, QPixmap, QMouseEvent, QImage
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFrame,
@@ -33,6 +35,7 @@ from app.loadout_data import (
     CHARACTERS,
     DRIVE_MODULES,
     DRIVE_SUB_OPTIONS,
+    LOADOUT_RECOMMENDATIONS,
     CARTRIDGE_MAIN_OPTIONS,
     CARTRIDGE_SUB_OPTIONS,
     DEFAULT_CARTRIDGE_ATTRIBUTES,
@@ -43,7 +46,9 @@ from app.loadout_data import (
     aggregate_attribute_lines,
     build_final_stat_lines,
     build_promotion_progress,
+    character_ark_type,
     character_avatar_path,
+    compatible_arks_for_character,
     format_option,
     format_percent,
     geometry_cell_count,
@@ -285,6 +290,236 @@ class SelectionDialog(QDialog):
         item = self.list_widget.currentItem()
         self.selected_id = item.data(Qt.UserRole) if item else None
         super().accept()
+
+
+class ScanReviewDialog(QDialog):
+    def __init__(self, items: list[dict[str, Any]], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('스캔 실패/검토 수동 등록')
+        self.resize(760, 660)
+        self.items = list(items)
+        self.index = 0
+        self.accepted_entries: list[dict[str, Any]] = []
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        self.count_label = QLabel('-')
+        self.count_label.setObjectName('SectionTitle')
+        root.addWidget(self.count_label)
+
+        body = QHBoxLayout()
+        body.setSpacing(14)
+        self.preview = QLabel('이미지 없음')
+        self.preview.setObjectName('LoadoutScannerPanel')
+        self.preview.setAlignment(Qt.AlignCenter)
+        self.preview.setFixedSize(360, 260)
+        body.addWidget(self.preview)
+
+        form = QVBoxLayout()
+        form.setSpacing(8)
+        self.reason_label = QLabel('-')
+        self.reason_label.setObjectName('Muted')
+        self.reason_label.setWordWrap(True)
+        form.addWidget(self.reason_label)
+
+        self.type_combo = QComboBox()
+        self.type_combo.addItem('드라이브 모듈', 'drive')
+        self.type_combo.addItem('카트리지', 'cartridge')
+        self.type_combo.currentIndexChanged.connect(self._rebuild_type_fields)
+        form.addWidget(self.type_combo)
+
+        self.quality_combo = QComboBox()
+        self.quality_combo.addItems(['S급', 'A급', 'B급'])
+        self.quality_combo.currentIndexChanged.connect(self._rebuild_type_fields)
+        form.addWidget(self.quality_combo)
+
+        self.base_combo = QComboBox()
+        form.addWidget(self.base_combo)
+
+        self.geometry_combo = QComboBox()
+        for key, label in GEOMETRY_LABELS.items():
+            if key != 'Core':
+                self.geometry_combo.addItem(label, key)
+        form.addWidget(self.geometry_combo)
+
+        self.main_combo = QComboBox()
+        form.addWidget(self.main_combo)
+
+        self.sub_combos: list[QComboBox] = []
+        for i in range(4):
+            combo = QComboBox()
+            self.sub_combos.append(combo)
+            form.addWidget(combo)
+        body.addLayout(form, 1)
+        root.addLayout(body, 1)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        skip = QPushButton('건너뛰기')
+        skip.clicked.connect(self.skip_current)
+        skip_all = QPushButton('전체 건너뛰기')
+        skip_all.clicked.connect(self.accept)
+        confirm = QPushButton('확인')
+        confirm.setObjectName('PrimaryButton')
+        confirm.clicked.connect(self.confirm_current)
+        buttons.addWidget(skip)
+        buttons.addWidget(skip_all)
+        buttons.addWidget(confirm)
+        root.addLayout(buttons)
+
+        self.load_current()
+
+    def _set_combo_data(self, combo: QComboBox, value: str):
+        idx = combo.findData(value)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+
+    def _fill_sub_combos(self, item_type: str, quality: str):
+        options = DRIVE_SUB_OPTIONS if item_type == 'drive' else CARTRIDGE_SUB_OPTIONS
+        context = {'kind': 'drive_sub', 'grid_count': 2} if item_type == 'drive' else {'kind': 'cartridge_sub'}
+        for combo in self.sub_combos:
+            current = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            for option in options:
+                combo.addItem(format_option(option['id'], quality, context), option['id'])
+            self._set_combo_data(combo, current or '')
+            combo.blockSignals(False)
+
+    def _rebuild_type_fields(self):
+        item_type = self.type_combo.currentData() or 'drive'
+        quality = self.quality_combo.currentText() or 'S급'
+        current_base = self.base_combo.currentData()
+        self.base_combo.blockSignals(True)
+        self.base_combo.clear()
+        source = DRIVE_MODULES if item_type == 'drive' else CARTRIDGES
+        for item in source:
+            if item.get('quality') != quality:
+                continue
+            meta = GEOMETRY_LABELS.get(item.get('geometry'), '') if item_type == 'drive' else ''
+            label = normalize_name(item.get('name')) + (f' · {meta}' if meta else '')
+            self.base_combo.addItem(label, item.get('id'))
+        self._set_combo_data(self.base_combo, current_base or '')
+        self.base_combo.blockSignals(False)
+        self.geometry_combo.setVisible(item_type == 'drive')
+        self.main_combo.setVisible(item_type == 'cartridge')
+
+        self.main_combo.blockSignals(True)
+        self.main_combo.clear()
+        for option in CARTRIDGE_MAIN_OPTIONS:
+            self.main_combo.addItem(format_option(option['id'], quality), option['id'])
+        self.main_combo.blockSignals(False)
+        self._fill_sub_combos(item_type, quality)
+
+    def load_current(self):
+        if self.index >= len(self.items):
+            self.accept()
+            return
+        item = self.items[self.index]
+        self.count_label.setText(f"스캔 실패/검토 {len(self.items)}개 중 {self.index + 1}번째")
+        self.reason_label.setText(f"{item.get('reason', '-')}\n신뢰도: {float(item.get('confidence') or 0):.2f}")
+
+        detail_path = Path(str(item.get('detail_path') or ''))
+        pixmap = QPixmap(str(detail_path)) if detail_path.exists() else QPixmap()
+        if pixmap.isNull():
+            self.preview.setPixmap(QPixmap())
+            self.preview.setText('이미지 없음')
+        else:
+            self.preview.setText('')
+            self.preview.setPixmap(pixmap.scaled(360, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+        entry = item.get('entry') or {}
+        item_type = entry.get('type') or item.get('type') or 'drive'
+        if item_type not in {'drive', 'cartridge'}:
+            item_type = 'drive'
+        self._set_combo_data(self.type_combo, item_type)
+        quality = entry.get('quality') or 'S급'
+        idx = self.quality_combo.findText(quality)
+        self.quality_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._rebuild_type_fields()
+        self._set_combo_data(self.base_combo, entry.get('base_id') or '')
+        self._set_combo_data(self.geometry_combo, entry.get('geometry') or '')
+        self._set_combo_data(self.main_combo, entry.get('main') or DEFAULT_CARTRIDGE_ATTRIBUTES['main'])
+        defaults = DEFAULT_DRIVE_ATTRIBUTES['subs'] if item_type == 'drive' else DEFAULT_CARTRIDGE_ATTRIBUTES['subs']
+        for combo, sub in zip(self.sub_combos, list(entry.get('subs') or defaults)[:4]):
+            self._set_combo_data(combo, sub)
+
+    def skip_current(self):
+        self.index += 1
+        self.load_current()
+
+    def confirm_current(self):
+        item = self.items[self.index]
+        item_type = self.type_combo.currentData() or 'drive'
+        quality = self.quality_combo.currentText() or 'S급'
+        entry = {
+            'type': item_type,
+            'base_id': self.base_combo.currentData(),
+            'quality': quality,
+            'subs': [combo.currentData() for combo in self.sub_combos if combo.currentData()][:4],
+            'raw_text': (item.get('entry') or {}).get('raw_text', ''),
+            'confidence': item.get('confidence') or (item.get('entry') or {}).get('confidence', 0),
+            'detail_path': item.get('detail_path', ''),
+            'order': item.get('index', self.index),
+        }
+        if item_type == 'drive':
+            entry['geometry'] = self.geometry_combo.currentData() or ''
+            base = next((it for it in DRIVE_MODULES if it.get('id') == entry['base_id']), None)
+            if not base or base.get('quality') != quality or (entry['geometry'] and base.get('geometry') != entry['geometry']):
+                base = next(
+                    (
+                        it for it in DRIVE_MODULES
+                        if it.get('quality') == quality and it.get('geometry') == (entry['geometry'] or it.get('geometry'))
+                    ),
+                    base,
+                )
+                if base:
+                    entry['base_id'] = base.get('id')
+            geometry = entry['geometry'] or (base or {}).get('geometry') or 'Hen2'
+            grid_count = geometry_cell_count(geometry)
+            entry['mains'] = [stat['id'] for stat in get_drive_main_stats(base or {'quality': quality, 'geometry': geometry}, grid_count)]
+        else:
+            entry['main'] = self.main_combo.currentData() or DEFAULT_CARTRIDGE_ATTRIBUTES['main']
+        self.accepted_entries.append(entry)
+        self.skip_current()
+
+
+class RecommendationChoiceDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('추천 장착')
+        self.resize(360, 220)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(12)
+        title = QLabel('추천 장착할 장비를 선택하세요.')
+        title.setObjectName('SectionTitle')
+        root.addWidget(title)
+        self.ark_check = QCheckBox('아크')
+        self.cartridge_check = QCheckBox('카트리지')
+        self.drive_check = QCheckBox('드라이브')
+        for check in (self.ark_check, self.cartridge_check, self.drive_check):
+            check.setChecked(True)
+            root.addWidget(check)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton('취소')
+        ok = QPushButton('확인')
+        ok.setObjectName('PrimaryButton')
+        cancel.clicked.connect(self.reject)
+        ok.clicked.connect(self.accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(ok)
+        root.addLayout(buttons)
+
+    def choices(self) -> dict[str, bool]:
+        return {
+            'ark': self.ark_check.isChecked(),
+            'cartridge': self.cartridge_check.isChecked(),
+            'drive': self.drive_check.isChecked(),
+        }
 
 
 class SlotCell(QFrame):
@@ -533,6 +768,7 @@ class LoadoutPage(QWidget):
         self.character_loadouts: dict[str, dict[str, Any]] = {}
         self.inventory_usage: dict[str, dict[str, Any]] = {}
         self._preload_picker_images()
+        self.ensure_compatible_ark()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 14, 18, 14)
@@ -1064,6 +1300,7 @@ class LoadoutPage(QWidget):
             if module:
                 self.current_module_id = module['id']
         self.placement_counter = max(self.placement_counter, len(self.placements) + 1)
+        self.ensure_compatible_ark()
 
     def rebuild_inventory_usage(self):
         usage: dict[str, dict[str, Any]] = {}
@@ -1182,20 +1419,34 @@ class LoadoutPage(QWidget):
                 self.refresh_all()
 
     def open_ark_picker(self):
-        recommended_ids = ARK_RECOMMENDATIONS.get(self.character().get('name', ''), ())
+        character_name = normalize_name(self.character().get('name', ''))
+        recommended_ids = ARK_RECOMMENDATIONS.get(character_name, ())
+        compatible_arks = compatible_arks_for_character(self.character(), ARCS)
+        ark_type = character_ark_type(self.character())
         dialog = SelectionDialog(
-            '아크 선택',
-            ARCS,
+            f'아크 선택 ({ark_type})' if ark_type else '아크 선택',
+            compatible_arks,
             image_getter=lambda item: module_image_path(item, prefer_icon=True),
-            meta_getter=lambda item: item.get('quality', ''),
+            meta_getter=lambda item: f"{item.get('quality', '')} · {item.get('type', '-')}",
             quality_filter=True,
-            recommended_ids=recommended_ids,
+            recommended_ids=[item_id for item_id in recommended_ids if item_id in {item['id'] for item in compatible_arks}],
             parent=self,
         )
         dialog.set_current_id(self.current_ark_id)
         if dialog.exec() == QDialog.Accepted and dialog.selected_id is not None:
             self.current_ark_id = dialog.selected_id
             self.refresh_all()
+
+    def ensure_compatible_ark(self):
+        compatible_arks = compatible_arks_for_character(self.character(), ARCS)
+        compatible_ids = {item['id'] for item in compatible_arks}
+        if not compatible_ids or self.current_ark_id in compatible_ids:
+            return
+        recommended_ids = [
+            item_id for item_id in ARK_RECOMMENDATIONS.get(normalize_name(self.character().get('name', '')), ())
+            if item_id in compatible_ids
+        ]
+        self.current_ark_id = recommended_ids[0] if recommended_ids else compatible_arks[0]['id']
 
     def open_cartridge_picker(self):
         dialog = SelectionDialog(
@@ -1486,6 +1737,21 @@ class LoadoutPage(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, '스캔 백엔드 오류', f'스캔 모듈을 불러오지 못했습니다.\n{exc}')
             return
+        try:
+            from app.scanner.runtime_setup import prepare_scan_runtime
+
+            runtime = prepare_scan_runtime(download=True, launch_installers=True)
+            if not runtime.ok:
+                QMessageBox.warning(
+                    self,
+                    '스캔 런타임 준비 필요',
+                    runtime.message or 'OCR 또는 컨트롤러 런타임을 사용할 수 없습니다. 설치 완료 후 다시 스캔하세요.',
+                )
+                self.update_scan_status()
+                return
+        except Exception as exc:
+            QMessageBox.warning(self, '스캔 런타임 확인 실패', f'스캔 런타임을 확인하지 못했습니다.\n{exc}')
+            return
 
         self.set_scan_status('스캔 준비 중... HTGame.exe 창을 찾고 컨트롤러 입력 인식 여부를 확인합니다.')
         for btn_name in ('auto_scan_btn',):
@@ -1504,11 +1770,15 @@ class LoadoutPage(QWidget):
 
     def on_scan_completed(self, result: dict[str, Any]):
         self.ingest_real_scan_results(result)
+        review_items = self.scan_review_items(result)
+        manual_count = 0
+        if review_items:
+            manual_count = self.open_scan_review_dialog(review_items)
         self._keep_scan_debug_text_only()
         self.set_scan_status(
             f"스캔 완료: 카트리지 {len(result.get('cartridges', []))}개 / "
             f"드라이브 {len(result.get('drives', []))}개 / 실패 {len(result.get('errors', []))}개 / "
-            f"검토 {len(result.get('review', []))}개"
+            f"검토 {len(result.get('review', []))}개 / 수동 추가 {manual_count}개"
         )
 
     def on_scan_failed(self, message: str):
@@ -1557,49 +1827,107 @@ class LoadoutPage(QWidget):
         c_start = len(self.cartridge_bag_items)
         d_start = len(self.drive_bag_items)
         for i, entry in enumerate(result.get('cartridges', [])):
-            base = self.cartridges_by_id.get(entry.get('base_id'))
-            if not base:
-                continue
-            quality = entry.get('quality') or base.get('quality', 'S급')
-            subs = list(entry.get('subs') or [])[:4]
-            while len(subs) < 4:
-                subs.append(DEFAULT_CARTRIDGE_ATTRIBUTES['subs'][len(subs)])
-            self.cartridge_bag_items.append({
-                'bag_id': f"scan-cartridge-{c_start + i}",
-                'base_id': base['id'],
-                'quality': quality,
-                'main': entry.get('main') or DEFAULT_CARTRIDGE_ATTRIBUTES['main'],
-                'subs': subs,
-                'scanned': True,
-                'order': c_start + i,
-                'raw_text': entry.get('raw_text', ''),
-                'confidence': entry.get('confidence', 0),
-            })
+            self._append_scanned_cartridge_entry(entry, f"scan-cartridge-{c_start + i}", c_start + i)
         for i, entry in enumerate(result.get('drives', [])):
-            base = self.modules_by_id.get(entry.get('base_id'))
-            if not base:
-                continue
-            geometry = entry.get('geometry') or base.get('geometry')
-            grid_count = geometry_cell_count(geometry)
-            subs = list(entry.get('subs') or [])[:4]
-            while len(subs) < 4:
-                subs.append(DEFAULT_DRIVE_ATTRIBUTES['subs'][len(subs)])
-            self.drive_bag_items.append({
-                'bag_id': f"scan-drive-{d_start + i}",
-                'base_id': base['id'],
-                'quality': entry.get('quality') or base.get('quality', 'S급'),
-                'geometry': geometry,
-                'mains': list(entry.get('mains') or [stat['id'] for stat in get_drive_main_stats(base, grid_count)]),
-                'subs': subs,
-                'scanned': True,
-                'order': d_start + i,
-                'raw_text': entry.get('raw_text', ''),
-                'confidence': entry.get('confidence', 0),
-            })
+            self._append_scanned_drive_entry(entry, f"scan-drive-{d_start + i}", d_start + i)
         self.rebuild_cartridge_bag_list()
         self.rebuild_drive_bag_list()
         self.update_scan_status()
         self.set_message('실제 스캔 결과 저장 완료 (이전 스캔 결과 교체)')
+
+    def _unique_bag_id(self, preferred: str, prefix: str) -> str:
+        existing = {item.get('bag_id') for item in self.cartridge_bag_items + self.drive_bag_items}
+        if preferred and preferred not in existing:
+            return preferred
+        index = 0
+        while f'{prefix}-{index}' in existing:
+            index += 1
+        return f'{prefix}-{index}'
+
+    def _append_scanned_cartridge_entry(self, entry: dict[str, Any], bag_id: str = '', order: int | None = None) -> bool:
+        base = self.cartridges_by_id.get(entry.get('base_id'))
+        if not base:
+            return False
+        quality = entry.get('quality') or base.get('quality', 'S급')
+        subs = list(entry.get('subs') or [])[:4]
+        while len(subs) < 4:
+            subs.append(DEFAULT_CARTRIDGE_ATTRIBUTES['subs'][len(subs)])
+        self.cartridge_bag_items.append({
+            'bag_id': self._unique_bag_id(bag_id or entry.get('bag_id', ''), 'scan-cartridge-manual'),
+            'base_id': base['id'],
+            'quality': quality,
+            'main': entry.get('main') or DEFAULT_CARTRIDGE_ATTRIBUTES['main'],
+            'subs': subs,
+            'scanned': True,
+            'order': int(order if order is not None else entry.get('order', len(self.cartridge_bag_items))),
+            'raw_text': entry.get('raw_text', ''),
+            'confidence': entry.get('confidence', 0),
+            'detail_path': entry.get('detail_path', ''),
+        })
+        return True
+
+    def _append_scanned_drive_entry(self, entry: dict[str, Any], bag_id: str = '', order: int | None = None) -> bool:
+        base = self.modules_by_id.get(entry.get('base_id'))
+        if not base:
+            return False
+        geometry = entry.get('geometry') or base.get('geometry')
+        grid_count = geometry_cell_count(geometry)
+        subs = list(entry.get('subs') or [])[:4]
+        while len(subs) < 4:
+            subs.append(DEFAULT_DRIVE_ATTRIBUTES['subs'][len(subs)])
+        self.drive_bag_items.append({
+            'bag_id': self._unique_bag_id(bag_id or entry.get('bag_id', ''), 'scan-drive-manual'),
+            'base_id': base['id'],
+            'quality': entry.get('quality') or base.get('quality', 'S급'),
+            'geometry': geometry,
+            'mains': list(entry.get('mains') or [stat['id'] for stat in get_drive_main_stats(base, grid_count)]),
+            'subs': subs,
+            'scanned': True,
+            'order': int(order if order is not None else entry.get('order', len(self.drive_bag_items))),
+            'raw_text': entry.get('raw_text', ''),
+            'confidence': entry.get('confidence', 0),
+            'detail_path': entry.get('detail_path', ''),
+        })
+        return True
+
+    def scan_review_items(self, result: dict[str, Any]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for item in result.get('review', []) or []:
+            entry = dict(item.get('entry') or {})
+            items.append({
+                'index': item.get('index'),
+                'type': item.get('type') or entry.get('type') or 'drive',
+                'reason': item.get('reason') or '검토 필요',
+                'confidence': item.get('confidence') or entry.get('confidence', 0),
+                'detail_path': item.get('detail_path') or entry.get('detail_path', ''),
+                'entry': entry,
+            })
+        for item in result.get('errors', []) or []:
+            items.append({
+                'index': item.get('index'),
+                'type': 'drive',
+                'reason': item.get('reason') or '스캔 실패',
+                'confidence': 0,
+                'detail_path': item.get('detail_path', ''),
+                'entry': {},
+            })
+        return items
+
+    def open_scan_review_dialog(self, items: list[dict[str, Any]]) -> int:
+        dialog = ScanReviewDialog(items, self)
+        dialog.exec()
+        added = 0
+        for entry in dialog.accepted_entries:
+            if entry.get('type') == 'cartridge':
+                added += 1 if self._append_scanned_cartridge_entry(entry) else 0
+            else:
+                added += 1 if self._append_scanned_drive_entry(entry) else 0
+        if added:
+            self.rebuild_cartridge_bag_list()
+            self.rebuild_drive_bag_list()
+            self.update_scan_status()
+            self.set_message(f'수동 검토 결과 {added}개를 가방에 추가했습니다.')
+        return added
 
     def ingest_scan_test_results(self, count: int):
         sub_ids_c = [it['id'] for it in CARTRIDGE_SUB_OPTIONS]
@@ -1639,32 +1967,159 @@ class LoadoutPage(QWidget):
         QMessageBox.information(self, '저장 완료', f'스캔 결과 테스트 데이터 {count}개를 가방에 저장했습니다.')
 
     def apply_recommended_loadout(self):
-        owner_count = int(slot_meta_for_character(self.current_character_id).get('owner_grid_count', 3))
+        dialog = RecommendationChoiceDialog(self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        choices = dialog.choices()
+        character_name = normalize_name(self.character().get('name', ''))
+        rec = LOADOUT_RECOMMENDATIONS.get(character_name, {})
+        messages: list[str] = []
+
+        if choices.get('ark'):
+            compatible_ids = {item['id'] for item in compatible_arks_for_character(self.character(), ARCS)}
+            recommended_arks = [
+                item_id for item_id in ARK_RECOMMENDATIONS.get(character_name, ())
+                if item_id in compatible_ids
+            ]
+            if recommended_arks:
+                self.current_ark_id = recommended_arks[0]
+                messages.append('아크 1번 추천 적용')
+            else:
+                messages.append('아크 추천 없음')
+
+        if choices.get('cartridge'):
+            if self._apply_recommended_cartridge(rec):
+                messages.append('카트리지 추천 적용')
+            else:
+                messages.append('카트리지 추천 없음')
+
+        placed = 0
+        if choices.get('drive'):
+            placed = self._apply_recommended_drives(rec)
+            messages.append(f'드라이브 {placed}개 배치')
+
+        self.set_message('추천 장착 완료: ' + ' / '.join(messages))
+        self.refresh_all()
+
+    def _quality_rank(self, quality: str) -> int:
+        return {'S급': 0, 'A급': 1, 'B급': 2}.get(quality, 9)
+
+    def _sub_match_count(self, entry: dict[str, Any], target_subs: list[str]) -> int:
+        entry_subs = set(entry.get('subs') or [])
+        return sum(1 for sub in target_subs if sub in entry_subs)
+
+    def _same_cartridge_family(self, left_id: str, right_id: str) -> bool:
+        left = self.cartridges_by_id.get(left_id)
+        right = self.cartridges_by_id.get(right_id)
+        if not left or not right:
+            return left_id == right_id
+        return normalize_name(left.get('name')) == normalize_name(right.get('name'))
+
+    def _available_cartridge_entries(self) -> list[dict[str, Any]]:
         self.rebuild_inventory_usage()
-        unused_cartridges = [it for it in self.cartridge_bag_items if not self.usage_for(it['bag_id']) or self.usage_for(it['bag_id']).get('character_id') == self.current_character_id]
-        if unused_cartridges:
-            entry = next((it for it in unused_cartridges if it.get('quality') == 'S급'), unused_cartridges[0])
+        return [
+            it for it in self.cartridge_bag_items
+            if not self.usage_for(it['bag_id']) or self.usage_for(it['bag_id']).get('character_id') == self.current_character_id
+        ]
+
+    def _apply_recommended_cartridge(self, rec: dict[str, Any]) -> bool:
+        target_id = rec.get('cartridge_id') or (preferred_cartridge(self.character()) or {}).get('id')
+        target = self.cartridges_by_id.get(target_id)
+        if not target:
+            return False
+        main_id = rec.get('cartridge_main') or DEFAULT_CARTRIDGE_ATTRIBUTES['main']
+        subs = list(rec.get('cartridge_subs') or DEFAULT_CARTRIDGE_ATTRIBUTES['subs'])[:4]
+        while len(subs) < 4:
+            subs.append(DEFAULT_CARTRIDGE_ATTRIBUTES['subs'][len(subs)])
+
+        candidates = [
+            entry for entry in self._available_cartridge_entries()
+            if self._same_cartridge_family(entry.get('base_id', ''), target_id)
+        ]
+        if candidates:
+            entry = sorted(
+                candidates,
+                key=lambda it: (
+                    0 if it.get('main') == main_id else 1,
+                    -self._sub_match_count(it, subs),
+                    self._quality_rank(it.get('quality', '')),
+                    int(it.get('order', 999999)),
+                ),
+            )[0]
             self.current_cartridge_bag_id = entry['bag_id']
             self.current_cartridge_id = entry['base_id']
-            self.cartridge_attr_selections[self.current_cartridge_id] = {'main': entry['main'], 'subs': list(entry['subs'])[:4]}
-        self.placements.clear()
-        slot_layout = trim_slot_matrix(slot_rows_for_character(self.current_character_id))
-        candidates = sorted(
-            [it for it in self.drive_bag_items if not self.usage_for(it['bag_id']) or self.usage_for(it['bag_id']).get('character_id') == self.current_character_id],
-            key=lambda it: (
-                0 if geometry_cell_count(it.get('geometry')) == owner_count else 1,
-                {'S급': 0, 'A급': 1, 'B급': 2}.get(it.get('quality'), 9),
-                -geometry_cell_count(it.get('geometry')),
-            )
+            self.cartridge_attr_selections[self.current_cartridge_id] = {
+                'main': entry.get('main') or main_id,
+                'subs': list(entry.get('subs') or subs)[:4],
+            }
+            return True
+
+        self.current_cartridge_bag_id = ''
+        self.current_cartridge_id = target_id
+        self.cartridge_attr_selections[self.current_cartridge_id] = {'main': main_id, 'subs': subs}
+        return True
+
+    def _available_drive_entries(self) -> list[dict[str, Any]]:
+        self.rebuild_inventory_usage()
+        return [
+            it for it in self.drive_bag_items
+            if not self.usage_for(it['bag_id']) or self.usage_for(it['bag_id']).get('character_id') == self.current_character_id
+        ]
+
+    def _drive_sort_key(self, entry: dict[str, Any], target_subs: list[str], preferred_grid_count: int, recommendation_grid_count: int) -> tuple:
+        cell_count = geometry_cell_count(entry.get('geometry'))
+        return (
+            0 if cell_count == preferred_grid_count else 1 if cell_count == recommendation_grid_count else 2,
+            -self._sub_match_count(entry, target_subs),
+            self._quality_rank(entry.get('quality', '')),
+            -cell_count,
+            int(entry.get('order', 999999)),
         )
+
+    def _best_drive_for_geometry(self, entries: list[dict[str, Any]], geometry: str, target_subs: list[str]) -> dict[str, Any] | None:
+        matches = [entry for entry in entries if entry.get('geometry') == geometry]
+        if not matches:
+            return None
+        return sorted(
+            matches,
+            key=lambda it: (
+                -self._sub_match_count(it, target_subs),
+                self._quality_rank(it.get('quality', '')),
+                int(it.get('order', 999999)),
+            ),
+        )[0]
+
+    def _apply_recommended_drives(self, rec: dict[str, Any]) -> int:
+        owner_count = int(slot_meta_for_character(self.current_character_id).get('owner_grid_count', 3))
+        recommendation_grid_count = int(rec.get('drive_grid_count') or owner_count)
+        target_subs = list(rec.get('drive_subs') or DEFAULT_DRIVE_ATTRIBUTES['subs'])[:4]
+        slot_layout = trim_slot_matrix(slot_rows_for_character(self.current_character_id))
+        available = self._available_drive_entries()
+        used_bag_ids: set[str] = set()
+        self.placements.clear()
+
         placed = 0
+        cartridge = self.cartridge()
+        promotion = cartridge.get('promotion') or cartridge.get('set', {}).get('promotion') if cartridge else None
+        for geometry in list((promotion or {}).get('requirements') or [])[:4]:
+            candidates = [entry for entry in available if entry.get('bag_id') not in used_bag_ids]
+            entry = self._best_drive_for_geometry(candidates, geometry, target_subs)
+            if entry and self._try_place_drive_entry(entry, slot_layout):
+                used_bag_ids.add(entry.get('bag_id'))
+                placed += 1
+
+        candidates = [
+            entry for entry in available
+            if entry.get('bag_id') not in used_bag_ids
+        ]
+        candidates.sort(key=lambda it: self._drive_sort_key(it, target_subs, owner_count, recommendation_grid_count))
         for entry in candidates:
             if placed >= 12:
                 break
             if self._try_place_drive_entry(entry, slot_layout):
+                used_bag_ids.add(entry.get('bag_id'))
                 placed += 1
-        self.set_message(f'추천 장착 완료: {placed}개 배치')
-        self.refresh_all()
+        return placed
 
     def _try_place_drive_entry(self, entry: dict[str, Any], slot_layout: dict[str, Any]) -> bool:
         module = self.modules_by_id.get(entry['base_id'])
@@ -1841,7 +2296,7 @@ class LoadoutPage(QWidget):
         if not ark:
             return
         effect = ark.get('effect') or ark.get('description') or ''
-        self.top_ark_effect.setText(text_cut(effect, 130))
+        self.top_ark_effect.setText(effect)
 
     def refresh_cartridge_panel(self):
         cartridge = self.cartridge()

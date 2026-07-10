@@ -81,6 +81,7 @@ class InventoryScanRunner:
                 ocr_workers = None
         self.ocr_workers = max(1, min(4, int(ocr_workers or 1)))
         self._thread_local = threading.local()
+        self.capture_errors: list[dict[str, Any]] = []
         self._setup_scan_backends()
 
     def _setup_scan_backends(self):
@@ -151,6 +152,7 @@ class InventoryScanRunner:
                 )
 
             captured = self.capture_all_items()
+            results['errors'].extend(self.capture_errors)
         finally:
             # Game control is no longer needed after image capture.  Release the
             # virtual pad before OCR so the game is not held by the scanner.
@@ -163,10 +165,6 @@ class InventoryScanRunner:
         ocr_results = self.ocr_captured_items(captured, results)
         for step_index, parsed in sorted(ocr_results, key=lambda it: it[0]):
             entry = parsed.to_bag_entry(step_index)
-            if parsed.item_type == 'drive':
-                results['drives'].append(entry)
-            else:
-                results['cartridges'].append(entry)
             if self.needs_review(parsed):
                 results['review'].append({
                     'index': step_index,
@@ -174,7 +172,14 @@ class InventoryScanRunner:
                     'type': parsed.item_type,
                     'confidence': parsed.confidence,
                     'reason': 'low_confidence_or_incomplete',
+                    'detail_path': entry.get('detail_path', ''),
+                    'entry': entry,
                 })
+                continue
+            if parsed.item_type == 'drive':
+                results['drives'].append(entry)
+            else:
+                results['cartridges'].append(entry)
         return results
 
     def capture_all_items(self) -> list[CapturedFrame]:
@@ -199,6 +204,13 @@ class InventoryScanRunner:
                 manifest.append({'index': step.index, 'row': step.row, 'col': step.col, 'detail': str(detail_path)})
             except Exception as exc:
                 self.log(f'[capture_failed] #{step.index}: {exc.__class__.__name__}: {exc}')
+                self.capture_errors.append({
+                    'index': step.index,
+                    'row': step.row,
+                    'col': step.col,
+                    'reason': f'{exc.__class__.__name__}: {exc}',
+                    'detail_path': '',
+                })
             if step.index == 1 or step.index % max(1, self.progress_interval) == 0 or step.index == self.total_count:
                 percent = int(step.index * 100 / max(1, self.total_count))
                 self.emit(step.index, f'이미지 스캔 중... {percent}% ({step.index}/{self.total_count}개)')
@@ -223,12 +235,25 @@ class InventoryScanRunner:
                 try:
                     parsed = future.result()
                     if parsed:
+                        parsed.detail_path = str(frame.detail_path)
                         parsed_items.append((frame.step.index, parsed))
                     else:
-                        results['errors'].append({'index': frame.step.index, 'row': frame.step.row, 'col': frame.step.col, 'reason': 'parse_failed'})
+                        results['errors'].append({
+                            'index': frame.step.index,
+                            'row': frame.step.row,
+                            'col': frame.step.col,
+                            'reason': 'parse_failed',
+                            'detail_path': str(frame.detail_path),
+                        })
                 except Exception as exc:
                     self.log(f'[ocr_failed] #{frame.step.index}: {exc.__class__.__name__}: {exc}')
-                    results['errors'].append({'index': frame.step.index, 'row': frame.step.row, 'col': frame.step.col, 'reason': f'{exc.__class__.__name__}: {exc}'})
+                    results['errors'].append({
+                        'index': frame.step.index,
+                        'row': frame.step.row,
+                        'col': frame.step.col,
+                        'reason': f'{exc.__class__.__name__}: {exc}',
+                        'detail_path': str(frame.detail_path),
+                    })
                 if completed == 1 or completed % max(1, self.progress_interval) == 0 or completed == total:
                     percent = int(completed * 100 / max(1, total))
                     self.emit(completed, f'드라이브 불러오는 중... {percent}% ({completed}/{total}개)')

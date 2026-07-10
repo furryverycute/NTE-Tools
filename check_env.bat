@@ -4,7 +4,7 @@ cd /d "%~dp0"
 chcp 65001 >nul 2>nul
 
 echo ===============================================
-echo NTE Tool Python Edition - Environment Check
+echo NTE Tool - Environment Check
 echo ===============================================
 echo.
 

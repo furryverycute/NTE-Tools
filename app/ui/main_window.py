@@ -10,13 +10,13 @@ from app.ui.cafe_page import CafePage
 from app.ui.loadout_page import LoadoutPage
 from app.ui.settings_page import SettingsPage
 from app.ui.style import APP_QSS
-from app.version import APP_VERSION
+from app.version import APP_NAME, APP_VERSION
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f'NTE Tool Python Edition - {APP_VERSION}')
+        self.setWindowTitle(f'{APP_NAME} - {APP_VERSION}')
         self.resize(1530, 920)
         self.setMinimumSize(1510, 800)
         self.setStyleSheet(APP_QSS)
@@ -37,7 +37,7 @@ class MainWindow(QMainWindow):
 
         app_title = QLabel('NTE Tool')
         app_title.setObjectName('AppTitle')
-        app_subtitle = QLabel('Python Desktop UI Demo\nNeverness To Everness')
+        app_subtitle = QLabel('Neverness To Everness')
         app_subtitle.setObjectName('AppSubtitle')
         app_subtitle.setWordWrap(True)
         side_layout.addWidget(app_title)
@@ -72,10 +72,6 @@ class MainWindow(QMainWindow):
         divider.setFrameShape(QFrame.HLine)
         divider.setStyleSheet('color: #263653; background: #263653; max-height: 1px;')
         side_layout.addWidget(divider)
-        notes = QLabel('별미 카페 자동화는 실제 계산 로직을 적용했습니다. 장착 시뮬레이터는 가방 스캔/추천 장착 구조를 추가 중입니다.')
-        notes.setObjectName('Muted')
-        notes.setWordWrap(True)
-        side_layout.addWidget(notes)
         self.sidebar_scan_status = QLabel('드라이브 불러오는 중... 0% (0/0개)')
         self.sidebar_scan_status.setObjectName('AppSubtitle')
         self.sidebar_scan_status.setWordWrap(True)
@@ -85,7 +81,7 @@ class MainWindow(QMainWindow):
             self.loadout_page.scan_status_changed.connect(self.sidebar_scan_status.setText)
         except Exception:
             pass
-        version = QLabel(f'{APP_VERSION}\nCafe logic · Loadout scanner')
+        version = QLabel(APP_VERSION)
         version.setObjectName('AppSubtitle')
         version.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
         side_layout.addWidget(version)

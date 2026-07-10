@@ -220,6 +220,7 @@ class ParsedOcrItem:
     subs: list[str] | None = None
     raw_text: str = ''
     confidence: float = 0.0
+    detail_path: str = ''
 
     def to_bag_entry(self, index: int) -> dict[str, Any]:
         if self.item_type == 'drive':
@@ -234,6 +235,7 @@ class ParsedOcrItem:
                 'order': index,
                 'raw_text': self.raw_text,
                 'confidence': self.confidence,
+                'detail_path': self.detail_path,
             }
         return {
             'bag_id': f'scan-cartridge-{index}',
@@ -245,6 +247,7 @@ class ParsedOcrItem:
             'order': index,
             'raw_text': self.raw_text,
             'confidence': self.confidence,
+            'detail_path': self.detail_path,
         }
 
 

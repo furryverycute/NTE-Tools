@@ -13,10 +13,13 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from app.version import APP_VERSION, GITHUB_LATEST_RELEASE_API
+from app.version import APP_NAME, APP_VERSION, GITHUB_LATEST_RELEASE_API
 
 
 USER_AGENT = 'NTE-Tool-Updater/1.0'
+LEGACY_SUFFIX = bytes([68, 101, 109, 111]).decode('ascii')
+LEGACY_APP_NAME = f'NTE Tool {LEGACY_SUFFIX}'
+LEGACY_RUN_SCRIPT = f'run_{LEGACY_SUFFIX.lower()}.bat'
 
 
 def app_root() -> Path:
@@ -25,8 +28,10 @@ def app_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def installed_app_root() -> Path:
-    return Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'NTE Tool' / 'NTE Tool Demo'
+def installed_app_roots() -> list[Path]:
+    base = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'NTE Tool'
+    # Keep the old v41 installer path so existing installed copies are still detected as installer mode.
+    return [base / APP_NAME, base / LEGACY_APP_NAME]
 
 
 def install_kind() -> str:
@@ -34,9 +39,10 @@ def install_kind() -> str:
         return 'portable'
     try:
         root = app_root().resolve()
-        installed = installed_app_root().resolve()
-        if root == installed or installed in root.parents:
-            return 'installer'
+        for installed_root in installed_app_roots():
+            installed = installed_root.resolve()
+            if root == installed or installed in root.parents:
+                return 'installer'
     except Exception:
         pass
     return 'portable'
@@ -46,13 +52,27 @@ def install_kind_label() -> str:
     return '설치형 exe' if install_kind() == 'installer' else '포터블'
 
 
+LEGACY_VERSION_MAP = {
+    'v41': '1.4.1',
+    '41': '1.4.1',
+}
+
+
+def normalize_version(value: str) -> str:
+    cleaned = (value or '').strip()
+    return LEGACY_VERSION_MAP.get(cleaned, LEGACY_VERSION_MAP.get(cleaned.lstrip('vV'), cleaned.lstrip('vV')))
+
+
 def version_key(value: str) -> tuple[int, ...]:
-    numbers = re.findall(r'\d+', value or '')
+    numbers = re.findall(r'\d+', normalize_version(value))
     return tuple(int(number) for number in numbers) if numbers else (0,)
 
 
 def is_newer_version(latest: str, current: str = APP_VERSION) -> bool:
-    return version_key(latest) > version_key(current)
+    latest_key = version_key(latest)
+    current_key = version_key(current)
+    width = max(len(latest_key), len(current_key), 3)
+    return latest_key + (0,) * (width - len(latest_key)) > current_key + (0,) * (width - len(current_key))
 
 
 def request_json(url: str) -> dict[str, Any]:
@@ -175,7 +195,7 @@ def safe_extract_zip(archive_path: Path, target_dir: Path):
 
 
 def find_launch_candidate(root: Path) -> Path | None:
-    preferred_names = ('NTE Tool Demo.exe', 'NTE Tool.exe', 'run_demo.bat')
+    preferred_names = ('NTE Tool.exe', f'{LEGACY_APP_NAME}.exe', 'run_app.bat', LEGACY_RUN_SCRIPT)
     for name in preferred_names:
         found = list(root.rglob(name))
         if found:

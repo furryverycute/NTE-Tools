@@ -25,7 +25,7 @@ def _existing_root_candidates() -> list[Path]:
         pass
 
     try:
-        # PyInstaller one-folder: executable lives in dist/NTE Tool Demo/
+        # PyInstaller one-folder: executable lives in dist/NTE Tool/
         roots.append(Path(sys.executable).resolve().parent)
     except Exception:
         pass

@@ -71,6 +71,9 @@ SLOT_EFFECTS = {
     'EquipmentSlots_daffodill': {'label': '암속성 이능력 피해', 'value': 0.10},
     'EquipmentSlots_chiichan': {'label': '빛속성 이능력 피해', 'value': 0.10},
     'EquipmentSlots_mitsuki': {'label': '공격력', 'value': 0.10},
+    'EquipmentSlots_Kaos': {'label': '치명 피해', 'value': 0.16},
+    'EquipmentSlots_Zhenhong': {'label': '치명 피해', 'value': 0.16},
+    'EquipmentSlots_Yiluoyi': {'label': '공격력', 'value': 0.10},
 }
 
 ATTRIBUTE_LABELS = {
@@ -406,6 +409,147 @@ ARK_RECOMMENDATIONS = {
     )
     for character, names in ARK_RECOMMENDATION_NAMES.items()
 }
+
+LOADOUT_RECOMMENDATION_FILE = asset_path('datamine', 'loadout_recommendations.txt')
+RECOMMENDATION_CHARACTER_ALIASES = {
+    '감정사': '제로',
+    'Zero': '제로',
+    'Aurelia': '우미츠키',
+    '아우렐리아': '우미츠키',
+    'Iroi': '일로이',
+}
+RECOMMENDATION_CARTRIDGE_ALIASES = {
+    'Speedy Hedgehog': 'GetEfficiency_orange',
+    'Fireflies and the Forest': 'Nature_orange',
+    'Diabolos': 'Chaos_orange',
+    'Crimson: Twin Butterflies': 'Incantation_orange',
+    'Street Boxer': 'Lakshana_orange',
+    'Lost Radiance': 'Cosmos_orange',
+    "Kingdom's Guard": 'Shield_orange',
+    "Devil's Blood: Curse": 'Psyche_orange',
+    "Thea's Night Tavern": 'Heal_orange',
+    'Tiny Big Adventure': 'Mag_orange',
+}
+RECOMMENDATION_OPTION_ALIASES = {
+    '사이클 강도': 'MagBase',
+    '브레이크 강도': 'UnbalIntensityBase',
+    '붕괴 강도': 'UnbalIntensityBase',
+    '치명타 확률': 'CritBase',
+    '치명 확률': 'CritBase',
+    '치명타 피해': 'CritDamageBase',
+    '치명 피해': 'CritDamageBase',
+    '공격력%': 'AtkUp',
+    '공격력': 'AtkAdd',
+    'HP%': 'HPMaxUp',
+    'HP': 'HPMaxAdd',
+    '방어력%': 'DefUp',
+    '방어력': 'DefAdd',
+    '통용 피해 증강': 'DamageUpGeneralBase',
+    '빛속성 이능력 피해 증강': 'DamageUpCosmosBase',
+    '령속성 이능력 피해 증강': 'DamageUpNatureBase',
+    '주속성 이능력 피해 증강': 'DamageUpIncantationBase',
+    '암속성 이능력 피해 증강': 'DamageUpChaosBase',
+    '혼속성 이능력 피해 증강': 'DamageUpPsycheBase',
+    '상속성 이능력 피해 증강': 'DamageUpLakshanaBase',
+    '정신 피해 증강': 'DamageUpPsychicallyBase',
+    '치유 보너스': 'HealUp',
+    '치료 보너스': 'HealUp',
+    '치료 효율': 'HealUp',
+}
+
+
+def _recommendation_character_key(name: str) -> str:
+    cleaned = normalize_name(name).strip()
+    return RECOMMENDATION_CHARACTER_ALIASES.get(cleaned, cleaned)
+
+
+def _recommendation_option_id(label: str) -> str:
+    cleaned = label.strip()
+    return RECOMMENDATION_OPTION_ALIASES.get(cleaned, cleaned)
+
+
+def _parse_recommendation_options(text: str) -> list[str]:
+    return [_recommendation_option_id(part) for part in re.split(r'\s*/\s*', text or '') if part.strip()]
+
+
+def _drive_type_count(label: str) -> int:
+    text = label.strip().upper()
+    if 'IV' in text or 'Ⅳ' in text:
+        return 4
+    if 'III' in text or 'Ⅲ' in text:
+        return 3
+    if 'II' in text or 'Ⅱ' in text:
+        return 2
+    return 3
+
+
+def _cartridge_id_from_recommendation(name: str) -> str:
+    name = name.strip()
+    if name in RECOMMENDATION_CARTRIDGE_ALIASES:
+        return RECOMMENDATION_CARTRIDGE_ALIASES[name]
+    normalized = normalize_name(name)
+    return next((item['id'] for item in CARTRIDGES if normalize_name(item.get('name')) == normalized and item.get('quality') == 'S급'), '')
+
+
+def load_loadout_recommendations() -> dict[str, dict[str, Any]]:
+    if not LOADOUT_RECOMMENDATION_FILE.exists():
+        return {}
+    text = LOADOUT_RECOMMENDATION_FILE.read_text(encoding='utf-8')
+    result: dict[str, dict[str, Any]] = {}
+    current_key = ''
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        header = re.match(r'^\[\d+\.\s+(.+?)(?:\s+\(([^)]*)\))?(?:\s+[^]]*)?\]', line)
+        if header:
+            korean = header.group(1).strip()
+            english = (header.group(2) or '').strip()
+            current_key = _recommendation_character_key(korean)
+            if english:
+                current_key = _recommendation_character_key(RECOMMENDATION_CHARACTER_ALIASES.get(english, current_key))
+            result.setdefault(current_key, {})
+            continue
+        if not current_key or ':' not in line:
+            continue
+        label, value = [part.strip() for part in line.split(':', 1)]
+        rec = result.setdefault(current_key, {})
+        if label == '추천 카트리지':
+            rec['cartridge_id'] = _cartridge_id_from_recommendation(value)
+            rec['cartridge_name'] = value
+        elif label == '기본 스펙':
+            match = re.search(r'/\s*(고체|액체|플라스마|플라즈마|기체|결합)\s*아크', value)
+            if match:
+                rec['ark_type'] = '플라스마' if match.group(1) == '플라즈마' else match.group(1)
+        elif label == '카트리지 주속성':
+            rec['cartridge_main'] = _recommendation_option_id(value)
+        elif label == '카트리지 부속성 4개':
+            rec['cartridge_subs'] = _parse_recommendation_options(value)[:4]
+        elif label == '드라이브 부속성 4개':
+            rec['drive_subs'] = _parse_recommendation_options(value)[:4]
+        elif label == '추천 드라이브 타입':
+            rec['drive_grid_count'] = _drive_type_count(value)
+    return result
+
+
+LOADOUT_RECOMMENDATIONS = load_loadout_recommendations()
+
+
+def character_ark_type(character: dict[str, Any] | None) -> str:
+    if not character:
+        return ''
+    direct = character.get('arkType') or character.get('arcType') or character.get('type')
+    if direct:
+        return '플라스마' if direct == '플라즈마' else str(direct)
+    return str(LOADOUT_RECOMMENDATIONS.get(normalize_name(character.get('name')), {}).get('ark_type') or '')
+
+
+def compatible_arks_for_character(character: dict[str, Any] | None, arks: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    ark_type = character_ark_type(character)
+    source = arks if arks is not None else ARCS
+    if not ark_type:
+        return list(source)
+    return [ark for ark in source if ark.get('type') == ark_type]
 
 # Keep a fast index for selections.
 CHARACTER_BY_ID = {str(item['id']): item for item in CHARACTERS}

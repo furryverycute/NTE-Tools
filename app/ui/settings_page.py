@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.updater import fetch_latest_release, install_kind_label, install_update, select_asset
+from app.updater import fetch_latest_release, install_update, select_asset
 from app.version import APP_VERSION, GITHUB_RELEASES_URL, GITHUB_REPO
 
 
@@ -67,10 +67,6 @@ class SettingsPage(QWidget):
         repo_label.setOpenExternalLinks(True)
         card_layout.addWidget(repo_label)
 
-        self.install_kind_label = QLabel(f'감지된 실행 방식: {install_kind_label()}')
-        self.install_kind_label.setObjectName('Muted')
-        card_layout.addWidget(self.install_kind_label)
-
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
         self.update_btn = QPushButton('업데이트 확인')
@@ -121,21 +117,18 @@ class SettingsPage(QWidget):
 
         tag = result.get('tag_name') or '-'
         assets = result.get('assets') or []
-        installer_count = sum(1 for asset in assets if asset.get('type') == 'installer')
-        portable_count = sum(1 for asset in assets if asset.get('type') == 'portable')
-        self.assets_label.setText(
-            f'감지된 릴리스 파일: 설치형 {installer_count}개 / 포터블 {portable_count}개\n'
-            f'현재 실행 방식: {install_kind_label()}'
-        )
 
         if not result.get('update_available'):
-            self.status_label.setText(f'최신 버전입니다. 최신 릴리스: {tag}')
+            self.status_label.setText('최신 버전입니다.')
+            self.assets_label.setText('최신 버전입니다.')
             return
+        body = (result.get('body') or '').strip() or '-'
+        self.assets_label.setText(body)
         if not assets:
             self.status_label.setText(f'새 릴리스 {tag}가 있지만 지원되는 설치형/포터블 파일이 없습니다.')
             return
         if not select_asset(result):
-            self.status_label.setText(f'새 릴리스 {tag}가 있지만 현재 실행 방식({install_kind_label()})에 맞는 파일이 없습니다.')
+            self.status_label.setText(f'새 릴리스 {tag}가 있지만 이 앱에 맞는 릴리스 파일이 없습니다.')
             return
 
         self.pending_release = result
@@ -147,7 +140,7 @@ class SettingsPage(QWidget):
             return
         self.update_btn.setEnabled(False)
         self.update_btn.setText('업데이트 중...')
-        self.status_label.setText(f'{install_kind_label()} 업데이트 파일을 다운로드하고 설치하는 중입니다.')
+        self.status_label.setText('업데이트 파일을 다운로드하고 설치하는 중입니다.')
         self.install_worker = UpdateInstallWorker(self.pending_release)
         self.install_worker.completed.connect(self.on_install_completed)
         self.install_worker.start()

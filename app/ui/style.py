@@ -89,6 +89,20 @@ QComboBox, QSpinBox {
     padding: 7px 9px;
     min-height: 20px;
 }
+QComboBox {
+    padding-right: 34px;
+}
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 26px;
+    border-left: none;
+}
+QComboBox::down-arrow {
+    width: 10px;
+    height: 10px;
+    margin-right: 8px;
+}
 QComboBox QAbstractItemView {
     background: #111827;
     border: 1px solid #314465;
@@ -484,6 +498,25 @@ QPushButton#LoadoutFilterButton:checked {
     color: #ffffff;
     font-weight: 800;
 }
+QFrame#LoadoutFilterChipBox {
+    background: #0f1728;
+    border: 1px solid #263653;
+    border-radius: 10px;
+}
+QPushButton#LoadoutFilterChip {
+    background: #18243b;
+    border: 1px solid #3e63a8;
+    border-radius: 8px;
+    color: #dbe7ff;
+    padding: 6px 8px;
+    text-align: left;
+    font-size: 11px;
+}
+QPushButton#LoadoutFilterChip:hover {
+    background: #243452;
+    border-color: #ffd25e;
+    color: #ffffff;
+}
 QLabel#LoadoutStripValue, QLabel#LoadoutSummaryValue {
     color: #ffffff;
     font-weight: 900;
@@ -514,6 +547,21 @@ QLabel#LoadoutRequirementBadgeActive {
     font-weight: 900;
     min-height: 24px;
     min-width: 54px;
+}
+QLabel#LoadoutPromotionEffectActive {
+    background: rgba(79, 124, 255, 0.16);
+    border: 1px solid #4f7cff;
+    border-radius: 8px;
+    color: #dbe7ff;
+    padding: 7px 8px;
+    font-weight: 800;
+}
+QLabel#LoadoutPromotionEffectInactive {
+    background: #0f1728;
+    border: 1px solid #263653;
+    border-radius: 8px;
+    color: #8ea4d0;
+    padding: 7px 8px;
 }
 QFrame#LoadoutSlotCellMatched {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #7df4df, stop:1 #1d7b88);

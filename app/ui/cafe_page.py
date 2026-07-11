@@ -5,9 +5,10 @@ from pathlib import Path
 import os
 import urllib.request
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -27,7 +28,44 @@ from PySide6.QtWidgets import (
 from app.core.cafe_optimizer import CafeOptimizerEngine, CafeResult
 from app.data import CAFE_TREND_OPTIONS, CHARACTER_AVATAR_FILES, EMPLOYEE_NAMES, MENU_IMAGE_FILES, STORE_NAMES
 from app.paths import asset_path
+from app.state_store import load_section, save_section
 from app.ui.widgets import Card
+
+
+class FocusWheelComboBox(QComboBox):
+    def __init__(self):
+        super().__init__()
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+class FocusWheelSpinBox(QSpinBox):
+    def __init__(self):
+        super().__init__()
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+class FocusWheelDoubleSpinBox(QDoubleSpinBox):
+    def __init__(self):
+        super().__init__()
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
 
 
 class TopMetric(QFrame):
@@ -200,7 +238,7 @@ class EmployeeWidget(QFrame):
         self.active = QCheckBox(name)
         self.active.setChecked(True)
         self.active.setMinimumWidth(64)
-        self.level = QSpinBox()
+        self.level = FocusWheelSpinBox()
         self.level.setRange(0, 5)
         self.level.setValue(default_level)
         self.level.setPrefix('Lv.')
@@ -227,6 +265,18 @@ class CafePage(QWidget):
         self.engine = CafeOptimizerEngine()
         self.employee_widgets: dict[str, EmployeeWidget] = {}
         self.store_cards: list[StoreResultCard] = []
+        self._loading_state = True
+        self._calculate_timer = QTimer(self)
+        self._calculate_timer.setSingleShot(True)
+        self._calculate_timer.setInterval(150)
+        self._calculate_timer.timeout.connect(self.calculate)
+        self._persist_timer = QTimer(self)
+        self._persist_timer.setSingleShot(True)
+        self._persist_timer.setInterval(450)
+        self._persist_timer.timeout.connect(self.persist_state)
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.persist_state)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 18)
@@ -242,13 +292,14 @@ class CafePage(QWidget):
         top.addWidget(self.income_box, 2)
 
         trend_panel = QFrame()
+        self.trend_panel = trend_panel
         trend_panel.setObjectName('CafeTopBox')
         trend_layout = QVBoxLayout(trend_panel)
         trend_layout.setContentsMargins(18, 14, 18, 14)
         trend_layout.setSpacing(8)
         trend_title = QLabel('오늘의 트렌드')
         trend_title.setObjectName('CafeTopTitle')
-        self.trend_combo = QComboBox()
+        self.trend_combo = FocusWheelComboBox()
         self.trend_combo.addItems(CAFE_TREND_OPTIONS)
         if '커피 원두' in CAFE_TREND_OPTIONS:
             self.trend_combo.setCurrentText('커피 원두')
@@ -275,6 +326,7 @@ class CafePage(QWidget):
         # Result section: 5 store cards
         # ------------------------------------------------------------------
         result_panel = QFrame()
+        self.result_panel = result_panel
         result_panel.setObjectName('CafeResultPanel')
         result_layout = QVBoxLayout(result_panel)
         result_layout.setContentsMargins(0, 0, 0, 0)
@@ -316,6 +368,7 @@ class CafePage(QWidget):
         condition_right.setSpacing(0)
 
         employee_panel = QFrame()
+        self.employee_panel = employee_panel
         employee_panel.setObjectName('ConditionPanel')
         employee_layout = QVBoxLayout(employee_panel)
         employee_layout.setContentsMargins(22, 18, 22, 16)
@@ -347,8 +400,8 @@ class CafePage(QWidget):
             self.employee_widgets[name] = widget
             row, col = divmod(idx, 3)
             employee_grid.addWidget(widget, row, col)
-            widget.active.stateChanged.connect(self.calculate)
-            widget.level.valueChanged.connect(self.calculate)
+            widget.active.stateChanged.connect(self.schedule_calculate)
+            widget.level.valueChanged.connect(self.schedule_calculate)
         scroll.setWidget(employee_container)
         employee_layout.addWidget(scroll)
         condition_right.addWidget(employee_panel, 2)
@@ -357,7 +410,8 @@ class CafePage(QWidget):
         control_row.setSpacing(0)
 
         level_panel = self._control_panel('매장 레벨')
-        self.level_spin = QSpinBox()
+        self.level_panel = level_panel
+        self.level_spin = FocusWheelSpinBox()
         self.level_spin.setRange(1, 40)
         self.level_spin.setValue(25)
         self.level_spin.setSuffix(' Lv')
@@ -368,7 +422,8 @@ class CafePage(QWidget):
         control_row.addWidget(level_panel, 1)
 
         interior_panel = self._control_panel('인테리어 계수')
-        self.interior_spin = QDoubleSpinBox()
+        self.interior_panel = interior_panel
+        self.interior_spin = FocusWheelDoubleSpinBox()
         self.interior_spin.setRange(0.0, 10.0)
         self.interior_spin.setSingleStep(0.01)
         self.interior_spin.setDecimals(3)
@@ -399,10 +454,12 @@ class CafePage(QWidget):
         all_lv5.clicked.connect(partial(self.set_all_levels, 5))
         all_lv0.clicked.connect(partial(self.set_all_levels, 0))
         all_on.clicked.connect(self.set_all_on)
-        self.level_spin.valueChanged.connect(self.calculate)
-        self.interior_spin.valueChanged.connect(self.calculate)
-        self.trend_combo.currentTextChanged.connect(self.calculate)
+        self.level_spin.valueChanged.connect(self.schedule_calculate)
+        self.interior_spin.valueChanged.connect(self.schedule_calculate)
+        self.trend_combo.currentTextChanged.connect(self.schedule_calculate)
 
+        self.restore_state()
+        self._loading_state = False
         self.calculate()
 
     def _control_panel(self, title: str) -> Card:
@@ -414,13 +471,70 @@ class CafePage(QWidget):
 
     def set_all_levels(self, level: int):
         for widget in self.employee_widgets.values():
+            widget.level.blockSignals(True)
             widget.set_level(level)
+            widget.level.blockSignals(False)
         self.calculate()
+        self.schedule_persist()
 
     def set_all_on(self):
         for widget in self.employee_widgets.values():
+            widget.active.blockSignals(True)
             widget.set_active(True)
+            widget.active.blockSignals(False)
         self.calculate()
+        self.schedule_persist()
+
+    def restore_state(self):
+        state = load_section('cafe')
+        trend = state.get('trend')
+        if trend in CAFE_TREND_OPTIONS:
+            self.trend_combo.setCurrentText(trend)
+        try:
+            self.level_spin.setValue(int(state.get('shop_level', self.level_spin.value())))
+        except Exception:
+            pass
+        try:
+            self.interior_spin.setValue(float(state.get('interior_rate', self.interior_spin.value())))
+        except Exception:
+            pass
+        employees = state.get('employees') if isinstance(state.get('employees'), dict) else {}
+        for name, item_state in employees.items():
+            widget = self.employee_widgets.get(name)
+            if not widget or not isinstance(item_state, dict):
+                continue
+            if 'active' in item_state:
+                widget.set_active(bool(item_state.get('active')))
+            if 'level' in item_state:
+                try:
+                    widget.set_level(int(item_state.get('level')))
+                except Exception:
+                    pass
+
+    def persist_state(self):
+        if self._loading_state or not hasattr(self, 'level_spin'):
+            return
+        levels, active = self._employee_state()
+        save_section('cafe', {
+            'trend': self.trend_combo.currentText(),
+            'shop_level': self.level_spin.value(),
+            'interior_rate': self.interior_spin.value(),
+            'employees': {
+                name: {'active': active.get(name, True), 'level': levels.get(name, 5)}
+                for name in self.employee_widgets
+            },
+        })
+
+    def schedule_calculate(self, *args):
+        if self._loading_state:
+            return
+        self._calculate_timer.start()
+        self.schedule_persist()
+
+    def schedule_persist(self):
+        if self._loading_state:
+            return
+        self._persist_timer.start()
 
     def _employee_state(self) -> tuple[dict[str, int], dict[str, bool]]:
         levels: dict[str, int] = {}

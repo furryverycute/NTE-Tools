@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout,
     QPushButton, QButtonGroup, QStackedWidget, QSizePolicy
@@ -10,6 +10,7 @@ from app.ui.cafe_page import CafePage
 from app.ui.loadout_page import LoadoutPage
 from app.ui.settings_page import SettingsPage
 from app.ui.style import APP_QSS
+from app.ui.tutorial import TutorialOverlay, should_show_tutorial
 from app.version import APP_NAME, APP_VERSION
 
 
@@ -62,6 +63,7 @@ class MainWindow(QMainWindow):
         nav_group.addButton(settings_button, 2)
         nav_group.idClicked.connect(self.stack.setCurrentIndex)
         cafe_button.setChecked(True)
+        self.nav_group = nav_group
         self.nav_buttons = [cafe_button, loadout_button, settings_button]
         side_layout.addWidget(cafe_button)
         side_layout.addWidget(loadout_button)
@@ -88,6 +90,8 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(sidebar)
         main_layout.addWidget(self.stack, 1)
+        self.tutorial_overlay: TutorialOverlay | None = None
+        QTimer.singleShot(600, self.show_tutorial)
 
     @staticmethod
     def make_nav_button(text: str) -> QPushButton:
@@ -97,3 +101,15 @@ class MainWindow(QMainWindow):
         button.setCursor(Qt.PointingHandCursor)
         button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return button
+
+    def set_current_page(self, page: str):
+        index = {'cafe': 0, 'loadout': 1, 'settings': 2}.get(page, 0)
+        self.stack.setCurrentIndex(index)
+        if 0 <= index < len(self.nav_buttons):
+            self.nav_buttons[index].setChecked(True)
+
+    def show_tutorial(self):
+        if not self.isVisible() or not should_show_tutorial():
+            return
+        self.tutorial_overlay = TutorialOverlay(self)
+        self.tutorial_overlay.show()

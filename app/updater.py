@@ -220,7 +220,7 @@ def install_update(release: dict[str, Any]) -> dict[str, Any]:
     mode = install_kind()
     asset = select_asset(release, mode)
     if not asset:
-        return {'ok': False, 'message': f'현재 실행 방식({install_kind_label()})에 맞는 릴리스 파일이 없습니다.'}
+        return {'ok': False, 'message': '이 앱에 맞는 릴리스 파일이 없습니다.'}
 
     tag = release.get('tag_name') or 'latest'
     work_dir = local_update_root() / safe_name(tag)

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -64,6 +65,7 @@ from app.loadout_data import (
     slot_rows_for_character,
     trim_slot_matrix,
 )
+from app.state_store import load_section, save_section
 
 
 QUALITY_FILTERS = ['S급', 'A급', 'B급', '전체']
@@ -196,7 +198,8 @@ class SelectionDialog(QDialog):
         self._items = list(items)
         self._image_getter = image_getter
         self._meta_getter = meta_getter
-        self._recommended_ids = {str(item_id) for item_id in recommended_ids}
+        self._recommended_ids = [str(item_id) for item_id in recommended_ids]
+        self._recommended_set = set(self._recommended_ids)
         self._quality_filter = '전체'
 
         root = QVBoxLayout(self)
@@ -258,19 +261,25 @@ class SelectionDialog(QDialog):
             if self._quality_filter == '전체' or item.get('quality') == self._quality_filter
         ]
         items.sort(key=lambda item: (
-            0 if str(item.get(self._id_key)) in self._recommended_ids else 1,
+            0 if str(item.get(self._id_key)) in self._recommended_set else 1,
+            {'S급': 0, 'A급': 1, 'B급': 2}.get(item.get('quality'), 9),
+            self._recommended_order(str(item.get(self._id_key))),
             normalize_name(item.get(self._name_key)),
         ))
         self.list_widget.clear()
         for item in items:
             item_id = item.get(self._id_key)
-            is_recommended = str(item_id) in self._recommended_ids
+            is_recommended = str(item_id) in self._recommended_set
             text = str(item.get(self._name_key, '-'))
             meta = self._meta_getter(item) if self._meta_getter else ''
             if is_recommended:
-                meta = f'추천 · {meta}' if meta else '추천'
+                text = f'★ {text}'
+                meta = f'추천 아크 · {meta}' if meta else '추천 아크'
             list_item = QListWidgetItem(text + (f'\n{meta}' if meta else ''))
             list_item.setData(Qt.UserRole, item_id)
+            if is_recommended:
+                list_item.setBackground(QBrush(QColor('#253d70')))
+                list_item.setForeground(QBrush(QColor('#ffe58a')))
             image_path = self._image_getter(item) if self._image_getter else None
             pixmap = self.cached_pixmap(image_path)
             if not pixmap.isNull():
@@ -278,6 +287,12 @@ class SelectionDialog(QDialog):
             self.list_widget.addItem(list_item)
             if item_id == current_id:
                 self.list_widget.setCurrentItem(list_item)
+
+    def _recommended_order(self, item_id: str) -> int:
+        try:
+            return self._recommended_ids.index(item_id)
+        except ValueError:
+            return 999
 
     def set_current_id(self, value):
         for i in range(self.list_widget.count()):
@@ -767,6 +782,10 @@ class LoadoutPage(QWidget):
         self.current_drive_bag_id = ''
         self.character_loadouts: dict[str, dict[str, Any]] = {}
         self.inventory_usage: dict[str, dict[str, Any]] = {}
+        self.cartridge_bag_selected_sub_filters: list[str] = []
+        self.drive_bag_selected_sub_filters: list[str] = []
+        self._loading_state = True
+        self.restore_state()
         self._preload_picker_images()
         self.ensure_compatible_ark()
 
@@ -782,6 +801,7 @@ class LoadoutPage(QWidget):
         body.addLayout(self._build_center_panel(), 1)
         body.addWidget(self._build_right_panel())
         root.addLayout(body, 1)
+        self._loading_state = False
         self.refresh_all()
 
     def _preload_picker_images(self):
@@ -845,6 +865,7 @@ class LoadoutPage(QWidget):
 
     def _build_scan_panel(self, compact: bool = False) -> QFrame:
         scan_panel = QFrame()
+        self.scan_panel = scan_panel
         scan_panel.setObjectName('LoadoutScannerPanel')
         scan_panel.setMinimumWidth(310)
         scan_panel.setMaximumWidth(380)
@@ -895,19 +916,13 @@ class LoadoutPage(QWidget):
         head.addWidget(p_title, 1)
         head.addWidget(self.promotion_count_label)
         p_root.addLayout(head)
-        self.cartridge_select_btn = QPushButton('카트리지 선택')
-        self.cartridge_select_btn.setObjectName('LoadoutPlacementButton')
-        self.cartridge_select_btn.clicked.connect(self.open_cartridge_picker)
-        p_root.addWidget(self.cartridge_select_btn)
         self.cartridge_tabs = QTabWidget()
         self.cartridge_tabs.setObjectName('LoadoutTabs')
         p_root.addWidget(self.cartridge_tabs, 1)
-        self.cartridge_tabs.addTab(self._build_cartridge_custom_tab(), '커스텀')
-        self.cartridge_tabs.addTab(self._build_cartridge_bag_tab(), '가방')
-        self.promotion_effects = QLabel('-')
-        self.promotion_effects.setObjectName('Muted')
-        self.promotion_effects.setWordWrap(True)
-        p_root.addWidget(self.promotion_effects)
+        self.cartridge_custom_tab = self._build_cartridge_custom_tab()
+        self.cartridge_bag_tab = self._build_cartridge_bag_tab()
+        self.cartridge_tabs.addTab(self.cartridge_custom_tab, '커스텀')
+        self.cartridge_tabs.addTab(self.cartridge_bag_tab, '가방')
         layout.addWidget(self.cartridge_card, 1)
         return panel
 
@@ -917,6 +932,30 @@ class LoadoutPage(QWidget):
         root = QVBoxLayout(page)
         root.setContentsMargins(0, 6, 0, 0)
         root.setSpacing(10)
+
+        self.cartridge_select_btn = QPushButton('카트리지 선택')
+        self.cartridge_select_btn.setObjectName('LoadoutPlacementButton')
+        self.cartridge_select_btn.clicked.connect(self.open_cartridge_picker)
+        root.addWidget(self.cartridge_select_btn)
+
+        promotion_group = QFrame()
+        promotion_group.setObjectName('LoadoutOptionGroupSecondary')
+        promotion_layout = QVBoxLayout(promotion_group)
+        promotion_layout.setContentsMargins(10, 10, 10, 10)
+        promotion_layout.setSpacing(8)
+        promotion_title = QLabel('진급 효과')
+        promotion_title.setObjectName('LoadoutOptionGroupTitle')
+        promotion_layout.addWidget(promotion_title)
+        req_holder = QWidget()
+        self.req_row = QHBoxLayout(req_holder)
+        self.req_row.setContentsMargins(0, 0, 0, 0)
+        self.req_row.setSpacing(8)
+        promotion_layout.addWidget(req_holder)
+        self.promotion_effects_layout = QVBoxLayout()
+        self.promotion_effects_layout.setContentsMargins(0, 0, 0, 0)
+        self.promotion_effects_layout.setSpacing(6)
+        promotion_layout.addLayout(self.promotion_effects_layout)
+        root.addWidget(promotion_group)
 
         main_group = QFrame()
         main_group.setObjectName('LoadoutOptionGroupPrimary')
@@ -958,12 +997,6 @@ class LoadoutPage(QWidget):
             sub_layout.addLayout(row)
         root.addWidget(sub_group)
 
-        req_holder = QWidget()
-        req_holder.setVisible(False)
-        self.req_row = QHBoxLayout(req_holder)
-        self.req_row.setContentsMargins(0, 0, 0, 0)
-        self.req_row.setSpacing(8)
-        root.addWidget(req_holder)
         root.addStretch(1)
         return page
 
@@ -986,28 +1019,31 @@ class LoadoutPage(QWidget):
         self.cartridge_bag_main.currentIndexChanged.connect(self.rebuild_cartridge_bag_list)
         root.addWidget(self.cartridge_bag_main)
 
-        sub_title = QLabel('부옵션 필터 최대 4개')
-        sub_title.setObjectName('LoadoutOptionGroupTitle')
-        root.addWidget(sub_title)
-        self.cartridge_bag_sub_filters: list[QComboBox] = []
-        for i in range(4):
-            combo = QComboBox()
-            combo.addItem(f'부옵 {i + 1} 전체', '')
-            for item in CARTRIDGE_SUB_OPTIONS:
-                combo.addItem(format_option(item['id'], 'S급', {'kind': 'cartridge_sub'}), item['id'])
-            combo.currentIndexChanged.connect(self.rebuild_cartridge_bag_list)
-            self.cartridge_bag_sub_filters.append(combo)
-            root.addWidget(combo)
+        self.cartridge_bag_sub = QComboBox()
+        self.cartridge_bag_sub.addItem('부옵 전체', '')
+        for item in CARTRIDGE_SUB_OPTIONS:
+            self.cartridge_bag_sub.addItem(format_option(item['id'], 'S급', {'kind': 'cartridge_sub'}), item['id'])
+        self.cartridge_bag_sub.currentIndexChanged.connect(self.on_cartridge_bag_sub_filter_selected)
+        root.addWidget(self.cartridge_bag_sub)
+
+        self.cartridge_bag_sub_filter_box = QFrame()
+        self.cartridge_bag_sub_filter_box.setObjectName('LoadoutFilterChipBox')
+        self.cartridge_bag_sub_filter_box.setVisible(False)
+        self.cartridge_bag_sub_filter_layout = QGridLayout(self.cartridge_bag_sub_filter_box)
+        self.cartridge_bag_sub_filter_layout.setContentsMargins(8, 8, 8, 8)
+        self.cartridge_bag_sub_filter_layout.setHorizontalSpacing(8)
+        self.cartridge_bag_sub_filter_layout.setVerticalSpacing(8)
+        root.addWidget(self.cartridge_bag_sub_filter_box)
 
         match_row = QHBoxLayout()
         self.cartridge_match_group = QButtonGroup(self)
         self.cartridge_match_group.setExclusive(True)
-        for count, label in [(0, '전체'), (1, '1개 일치'), (2, '2개'), (3, '3개'), (4, '4개')]:
-            btn = QPushButton(label)
+        for count in (1, 2, 3, 4):
+            btn = QPushButton(f'{count}개 일치')
             btn.setObjectName('LoadoutFilterButton')
             btn.setCheckable(True)
             btn.setProperty('match_count', count)
-            if count == 0:
+            if count == 1:
                 btn.setChecked(True)
             self.cartridge_match_group.addButton(btn)
             btn.clicked.connect(self.rebuild_cartridge_bag_list)
@@ -1015,7 +1051,6 @@ class LoadoutPage(QWidget):
         root.addLayout(match_row)
 
         self.cartridge_bag_list = QListWidget()
-        self.cartridge_bag_list.setFixedWidth(LOADOUT_SIDE_PANEL_WIDTH - 42)
         self.configure_bag_grid(self.cartridge_bag_list)
         self.cartridge_bag_list.itemClicked.connect(self.on_cartridge_bag_selected)
         root.addWidget(self.cartridge_bag_list, 1)
@@ -1073,8 +1108,10 @@ class LoadoutPage(QWidget):
         self.module_tabs = QTabWidget()
         self.module_tabs.setObjectName('LoadoutTabs')
         p_root.addWidget(self.module_tabs, 1)
-        self.module_tabs.addTab(self._build_module_custom_tab(), '커스텀')
-        self.module_tabs.addTab(self._build_module_bag_tab(), '가방')
+        self.module_custom_tab = self._build_module_custom_tab()
+        self.module_bag_tab = self._build_module_bag_tab()
+        self.module_tabs.addTab(self.module_custom_tab, '커스텀')
+        self.module_tabs.addTab(self.module_bag_tab, '가방')
         layout.addWidget(picker, 1)
 
         # 하단 계산 결과 요약 패널은 최종 스펙 플로팅 창으로 대체합니다.
@@ -1181,11 +1218,32 @@ class LoadoutPage(QWidget):
         self.drive_bag_sub.addItem('부옵 전체', '')
         for item in DRIVE_SUB_OPTIONS:
             self.drive_bag_sub.addItem(format_option(item['id'], 'S급', {'kind': 'drive_sub', 'grid_count': 2}), item['id'])
-        self.drive_bag_sub.currentIndexChanged.connect(self.rebuild_drive_bag_list)
+        self.drive_bag_sub.currentIndexChanged.connect(self.on_drive_bag_sub_filter_selected)
         for widget in (self.drive_bag_quality, self.drive_bag_geometry, self.drive_bag_main, self.drive_bag_sub):
             root.addWidget(widget)
+        self.drive_bag_sub_filter_box = QFrame()
+        self.drive_bag_sub_filter_box.setObjectName('LoadoutFilterChipBox')
+        self.drive_bag_sub_filter_box.setVisible(False)
+        self.drive_bag_sub_filter_layout = QGridLayout(self.drive_bag_sub_filter_box)
+        self.drive_bag_sub_filter_layout.setContentsMargins(8, 8, 8, 8)
+        self.drive_bag_sub_filter_layout.setHorizontalSpacing(8)
+        self.drive_bag_sub_filter_layout.setVerticalSpacing(8)
+        root.addWidget(self.drive_bag_sub_filter_box)
+        drive_match_row = QHBoxLayout()
+        self.drive_match_group = QButtonGroup(self)
+        self.drive_match_group.setExclusive(True)
+        for count in (1, 2, 3, 4):
+            btn = QPushButton(f'{count}개 일치')
+            btn.setObjectName('LoadoutFilterButton')
+            btn.setCheckable(True)
+            btn.setProperty('match_count', count)
+            if count == 1:
+                btn.setChecked(True)
+            self.drive_match_group.addButton(btn)
+            btn.clicked.connect(self.rebuild_drive_bag_list)
+            drive_match_row.addWidget(btn)
+        root.addLayout(drive_match_row)
         self.drive_bag_list = QListWidget()
-        self.drive_bag_list.setFixedWidth(LOADOUT_SIDE_PANEL_WIDTH - 42)
         self.configure_bag_grid(self.drive_bag_list)
         self.drive_bag_list.itemClicked.connect(self.on_drive_bag_selected)
         root.addWidget(self.drive_bag_list, 1)
@@ -1204,6 +1262,75 @@ class LoadoutPage(QWidget):
         widget.setObjectName('LoadoutBagGrid')
         widget.viewport().setObjectName('LoadoutBagGridViewport')
         widget.setWordWrap(True)
+        widget.setMinimumWidth(0)
+        widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    def restore_state(self):
+        state = load_section('loadout')
+        self.current_character_id = str(state.get('current_character_id') or self.current_character_id)
+        if self.current_character_id not in self.characters_by_id:
+            self.current_character_id = str(CHARACTERS[0]['id'])
+        self.current_ark_id = state.get('current_ark_id') or self.current_ark_id
+        self.current_cartridge_id = state.get('current_cartridge_id') or self.current_cartridge_id
+        self.current_module_id = state.get('current_module_id') or self.current_module_id
+        self.module_quality_filter = state.get('module_quality_filter') or self.module_quality_filter
+        if isinstance(state.get('cartridge_bag_items'), list):
+            self.cartridge_bag_items = deepcopy(state.get('cartridge_bag_items') or [])
+        if isinstance(state.get('drive_bag_items'), list):
+            self.drive_bag_items = deepcopy(state.get('drive_bag_items') or [])
+        self.current_cartridge_bag_id = state.get('current_cartridge_bag_id') or ''
+        self.current_drive_bag_id = state.get('current_drive_bag_id') or ''
+        if isinstance(state.get('character_loadouts'), dict):
+            self.character_loadouts = deepcopy(state.get('character_loadouts') or {})
+            for loadout in self.character_loadouts.values():
+                if isinstance(loadout, dict):
+                    loadout['placements'] = [self._restore_placement_state(item) for item in loadout.get('placements', [])]
+        if isinstance(state.get('cartridge_attr_selections'), dict):
+            self.cartridge_attr_selections = deepcopy(state.get('cartridge_attr_selections') or {})
+        if isinstance(state.get('drive_attr_selections'), dict):
+            self.drive_attr_selections = deepcopy(state.get('drive_attr_selections') or {})
+        if isinstance(state.get('cartridge_bag_selected_sub_filters'), list):
+            self.cartridge_bag_selected_sub_filters = [
+                str(item) for item in state.get('cartridge_bag_selected_sub_filters') or []
+                if str(item) in {option['id'] for option in CARTRIDGE_SUB_OPTIONS}
+            ]
+        if isinstance(state.get('drive_bag_selected_sub_filters'), list):
+            self.drive_bag_selected_sub_filters = [
+                str(item) for item in state.get('drive_bag_selected_sub_filters') or []
+                if str(item) in {option['id'] for option in DRIVE_SUB_OPTIONS}
+            ]
+        if isinstance(state.get('placements'), list):
+            self.placements = [self._restore_placement_state(item) for item in state.get('placements') or []]
+        self.ensure_compatible_ark()
+
+    def _restore_placement_state(self, placement: dict[str, Any]) -> dict[str, Any]:
+        item = deepcopy(placement)
+        item['cells'] = [tuple(cell) for cell in item.get('cells', []) if isinstance(cell, (list, tuple)) and len(cell) == 2]
+        origin = item.get('origin')
+        if isinstance(origin, (list, tuple)) and len(origin) == 2:
+            item['origin'] = tuple(origin)
+        return item
+
+    def persist_state(self):
+        if self._loading_state:
+            return
+        save_section('loadout', {
+            'current_character_id': self.current_character_id,
+            'current_ark_id': self.current_ark_id,
+            'current_cartridge_id': self.current_cartridge_id,
+            'current_module_id': self.current_module_id,
+            'module_quality_filter': self.module_quality_filter,
+            'placements': deepcopy(self.placements),
+            'cartridge_bag_items': deepcopy(self.cartridge_bag_items),
+            'drive_bag_items': deepcopy(self.drive_bag_items),
+            'current_cartridge_bag_id': self.current_cartridge_bag_id,
+            'current_drive_bag_id': self.current_drive_bag_id,
+            'character_loadouts': deepcopy(self.character_loadouts),
+            'cartridge_attr_selections': deepcopy(self.cartridge_attr_selections),
+            'drive_attr_selections': deepcopy(self.drive_attr_selections),
+            'cartridge_bag_selected_sub_filters': list(self.cartridge_bag_selected_sub_filters),
+            'drive_bag_selected_sub_filters': list(self.drive_bag_selected_sub_filters),
+        })
 
     # ------------------------------------------------------------------ data helpers
     def _build_cartridge_bag_items(self) -> list[dict[str, Any]]:
@@ -1482,7 +1609,7 @@ class LoadoutPage(QWidget):
         self.cartridge_attr_selections[self.current_cartridge_id] = attrs
         self.refresh_all()
 
-    def on_cartridge_sub_changed(self, index: int):
+    def on_cartridge_sub_changed(self, index: int, *args):
         if self._refreshing or not self.current_cartridge_id:
             return
         attrs = self.cartridge_attrs().copy()
@@ -1494,7 +1621,7 @@ class LoadoutPage(QWidget):
         self.cartridge_attr_selections[self.current_cartridge_id] = attrs
         self.refresh_all()
 
-    def on_drive_sub_changed(self, index: int):
+    def on_drive_sub_changed(self, index: int, *args):
         if self._refreshing or not self.current_module_id:
             return
         attrs = self.drive_attrs().copy()
@@ -1614,6 +1741,44 @@ class LoadoutPage(QWidget):
         else:
             self.set_message('가방 드라이브 선택')
         self.refresh_all()
+
+    def on_cartridge_bag_sub_filter_selected(self, *args):
+        if not hasattr(self, 'cartridge_bag_sub'):
+            return
+        sub_id = self.cartridge_bag_sub.currentData()
+        if sub_id and sub_id not in self.cartridge_bag_selected_sub_filters:
+            self.cartridge_bag_selected_sub_filters.append(sub_id)
+        self.cartridge_bag_sub.blockSignals(True)
+        self.cartridge_bag_sub.setCurrentIndex(0)
+        self.cartridge_bag_sub.blockSignals(False)
+        self.rebuild_cartridge_bag_sub_filter_chips()
+        self.rebuild_cartridge_bag_list()
+        self.persist_state()
+
+    def remove_cartridge_bag_sub_filter(self, sub_id: str, *args):
+        self.cartridge_bag_selected_sub_filters = [item for item in self.cartridge_bag_selected_sub_filters if item != sub_id]
+        self.rebuild_cartridge_bag_sub_filter_chips()
+        self.rebuild_cartridge_bag_list()
+        self.persist_state()
+
+    def on_drive_bag_sub_filter_selected(self, *args):
+        if not hasattr(self, 'drive_bag_sub'):
+            return
+        sub_id = self.drive_bag_sub.currentData()
+        if sub_id and sub_id not in self.drive_bag_selected_sub_filters:
+            self.drive_bag_selected_sub_filters.append(sub_id)
+        self.drive_bag_sub.blockSignals(True)
+        self.drive_bag_sub.setCurrentIndex(0)
+        self.drive_bag_sub.blockSignals(False)
+        self.rebuild_drive_bag_sub_filter_chips()
+        self.rebuild_drive_bag_list()
+        self.persist_state()
+
+    def remove_drive_bag_sub_filter(self, sub_id: str, *args):
+        self.drive_bag_selected_sub_filters = [item for item in self.drive_bag_selected_sub_filters if item != sub_id]
+        self.rebuild_drive_bag_sub_filter_chips()
+        self.rebuild_drive_bag_list()
+        self.persist_state()
 
     def open_placed_modules_dialog(self):
         dialog = QDialog(self)
@@ -1780,6 +1945,7 @@ class LoadoutPage(QWidget):
             f"드라이브 {len(result.get('drives', []))}개 / 실패 {len(result.get('errors', []))}개 / "
             f"검토 {len(result.get('review', []))}개 / 수동 추가 {manual_count}개"
         )
+        self.persist_state()
 
     def on_scan_failed(self, message: str):
         QMessageBox.critical(
@@ -1789,7 +1955,7 @@ class LoadoutPage(QWidget):
             f'{message}\n\n'
             '확인할 것:\n'
             '1. setup.bat 실행\n'
-            '2. ViGEmBus_1.22.0_x64_x86_arm64.exe 설치 또는 vgamepad 설치 중 드라이버 설치 완료\n'
+            '2. ViGEmBus 설치 후 Windows 재부팅 또는 드라이버 서비스 상태 확인\n'
             '3. 게임 가방 > 콘솔 탭 열기\n'
             '4. 첫 번째 콘솔 선택 상태로 시작',
         )
@@ -2222,11 +2388,9 @@ class LoadoutPage(QWidget):
     def filtered_cartridge_bag_items(self) -> list[dict[str, Any]]:
         quality = self.cartridge_bag_quality.currentText() if hasattr(self, 'cartridge_bag_quality') else '전체'
         main_id = self.cartridge_bag_main.currentData() if hasattr(self, 'cartridge_bag_main') else ''
-        selected_subs = []
-        if hasattr(self, 'cartridge_bag_sub_filters'):
-            selected_subs = [combo.currentData() for combo in self.cartridge_bag_sub_filters if combo.currentData()]
+        selected_subs = list(getattr(self, 'cartridge_bag_selected_sub_filters', []))
         selected_button = self.cartridge_match_group.checkedButton() if hasattr(self, 'cartridge_match_group') else None
-        min_match = int(selected_button.property('match_count') or 0) if selected_button else 0
+        min_match = int(selected_button.property('match_count') or 1) if selected_button else 1
         items = self.cartridge_bag_items
         if quality != '전체':
             items = [it for it in items if it['quality'] == quality]
@@ -2235,17 +2399,14 @@ class LoadoutPage(QWidget):
         if selected_subs:
             def matches(entry):
                 return sum(1 for sub in selected_subs if sub in entry['subs'])
-            if min_match > 0:
-                items = [it for it in items if matches(it) >= min_match]
-            else:
-                items = [it for it in items if matches(it) > 0]
+            items = [it for it in items if matches(it) >= min_match]
         return self.sort_inventory_items(items)
 
     def filtered_drive_bag_items(self) -> list[dict[str, Any]]:
         quality = self.drive_bag_quality.currentText() if hasattr(self, 'drive_bag_quality') else '전체'
         geometry = self.drive_bag_geometry.currentData() if hasattr(self, 'drive_bag_geometry') else ''
         main_id = self.drive_bag_main.currentData() if hasattr(self, 'drive_bag_main') else ''
-        sub_id = self.drive_bag_sub.currentData() if hasattr(self, 'drive_bag_sub') else ''
+        sub_ids = list(getattr(self, 'drive_bag_selected_sub_filters', []))
         items = self.drive_bag_items
         if quality != '전체':
             items = [it for it in items if it['quality'] == quality]
@@ -2253,8 +2414,13 @@ class LoadoutPage(QWidget):
             items = [it for it in items if it['geometry'] == geometry]
         if main_id:
             items = [it for it in items if main_id in it.get('mains', [])]
-        if sub_id:
-            items = [it for it in items if sub_id in it['subs']]
+        if sub_ids:
+            selected_button = self.drive_match_group.checkedButton() if hasattr(self, 'drive_match_group') else None
+            min_match = int(selected_button.property('match_count') or 1) if selected_button else 1
+
+            def matches(entry):
+                return sum(1 for sub_id in sub_ids if sub_id in entry.get('subs', []))
+            items = [it for it in items if matches(it) >= min_match]
         return self.sort_inventory_items(items)
 
     def promotion_progress(self) -> dict[str, Any]:
@@ -2271,11 +2437,50 @@ class LoadoutPage(QWidget):
             self.refresh_module_panel()
             self.refresh_board_and_summary()
             self.rebuild_inventory_usage()
+            self.rebuild_cartridge_bag_sub_filter_chips()
             self.rebuild_cartridge_bag_list()
+            self.rebuild_drive_bag_sub_filter_chips()
             self.rebuild_drive_bag_list()
             self.update_scan_status()
         finally:
             self._refreshing = False
+        self.persist_state()
+
+    def rebuild_cartridge_bag_sub_filter_chips(self):
+        if not hasattr(self, 'cartridge_bag_sub_filter_layout'):
+            return
+        while self.cartridge_bag_sub_filter_layout.count():
+            item = self.cartridge_bag_sub_filter_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        selected = list(getattr(self, 'cartridge_bag_selected_sub_filters', []))
+        self.cartridge_bag_sub_filter_box.setVisible(bool(selected))
+        for idx, sub_id in enumerate(selected):
+            button = QPushButton(f"{format_option(sub_id, 'S급', {'kind': 'cartridge_sub'})}  ×")
+            button.setObjectName('LoadoutFilterChip')
+            button.setToolTip('클릭하면 이 부옵 필터를 해제합니다.')
+            button.clicked.connect(partial(self.remove_cartridge_bag_sub_filter, sub_id))
+            row, col = divmod(idx, 2)
+            self.cartridge_bag_sub_filter_layout.addWidget(button, row, col)
+
+    def rebuild_drive_bag_sub_filter_chips(self):
+        if not hasattr(self, 'drive_bag_sub_filter_layout'):
+            return
+        while self.drive_bag_sub_filter_layout.count():
+            item = self.drive_bag_sub_filter_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        selected = list(getattr(self, 'drive_bag_selected_sub_filters', []))
+        self.drive_bag_sub_filter_box.setVisible(bool(selected))
+        for idx, sub_id in enumerate(selected):
+            button = QPushButton(f"{format_option(sub_id, 'S급', {'kind': 'drive_sub', 'grid_count': 2})}  ×")
+            button.setObjectName('LoadoutFilterChip')
+            button.setToolTip('클릭하면 이 부옵 필터를 해제합니다.')
+            button.clicked.connect(partial(self.remove_drive_bag_sub_filter, sub_id))
+            row, col = divmod(idx, 2)
+            self.drive_bag_sub_filter_layout.addWidget(button, row, col)
 
     def refresh_selector_tiles(self):
         ch = self.character()
@@ -2320,6 +2525,11 @@ class LoadoutPage(QWidget):
             widget = item.widget()
             if widget:
                 widget.deleteLater()
+        while self.promotion_effects_layout.count():
+            item = self.promotion_effects_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
         progress = self.promotion_progress()
         self.promotion_count_label.setText(f"{progress['matched_count']} / {progress['total_count']}" if progress['total_count'] else '-')
         for req in progress['requirement_status']:
@@ -2327,12 +2537,24 @@ class LoadoutPage(QWidget):
             label.setObjectName('LoadoutRequirementBadgeActive' if req['active'] else 'LoadoutRequirementBadge')
             label.setAlignment(Qt.AlignCenter)
             self.req_row.addWidget(label)
-        effects = progress['active_effects']
+        promotion = cartridge.get('promotion') or cartridge.get('set', {}).get('promotion') or {}
+        effects = list(promotion.get('effects') or [])
         if effects:
-            self.promotion_effects.setText('\n'.join(effect.get('description') or effect.get('title') or '' for effect in effects))
+            matched_count = int(progress.get('matched_count') or 0)
+            for effect in effects:
+                condition = int(effect.get('condition') or 0)
+                active = condition <= matched_count
+                prefix = '활성' if active else '미활성'
+                text = effect.get('description') or effect.get('title') or '-'
+                label = QLabel(f'{prefix} [{condition}]: {text}')
+                label.setObjectName('LoadoutPromotionEffectActive' if active else 'LoadoutPromotionEffectInactive')
+                label.setWordWrap(True)
+                self.promotion_effects_layout.addWidget(label)
         else:
-            raw_effects = (cartridge.get('promotion') or {}).get('effects', [])
-            self.promotion_effects.setText(text_cut(raw_effects[0].get('description', '') if raw_effects else '요구 드라이브 모듈을 장착하면 보너스가 활성화됩니다.', 180))
+            label = QLabel('진급 효과 데이터가 없습니다.')
+            label.setObjectName('LoadoutPromotionEffectInactive')
+            label.setWordWrap(True)
+            self.promotion_effects_layout.addWidget(label)
 
     def refresh_module_panel(self):
         module = self.module()

@@ -37,6 +37,13 @@ class RuntimeSetupResult:
         return '\n'.join(self.messages)
 
 
+@dataclass(frozen=True)
+class ControllerDriverStatus:
+    installed: bool = False
+    running: bool = False
+    detail: str = ''
+
+
 def runtime_dir() -> Path:
     base = Path(os.environ.get('LOCALAPPDATA') or os.environ.get('APPDATA') or Path.home())
     target = base / 'NTE Tool' / 'runtime'
@@ -105,6 +112,57 @@ def launch_controller_installer(path: Path | None = None) -> bool:
     return True
 
 
+def controller_driver_status() -> ControllerDriverStatus:
+    details: list[str] = []
+    installed = False
+    running = False
+    if os.name == 'nt':
+        try:
+            proc = subprocess.run(
+                ['sc.exe', 'query', 'ViGEmBus'],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            output = (proc.stdout or '') + (proc.stderr or '')
+            if proc.returncode == 0 or 'SERVICE_NAME' in output:
+                installed = True
+                running = 'RUNNING' in output.upper()
+                details.append('service=running' if running else 'service=installed')
+        except Exception:
+            pass
+        try:
+            import winreg
+
+            roots = [
+                (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'),
+                (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'),
+            ]
+            for root, subkey in roots:
+                try:
+                    with winreg.OpenKey(root, subkey) as parent:
+                        for index in range(winreg.QueryInfoKey(parent)[0]):
+                            try:
+                                child_name = winreg.EnumKey(parent, index)
+                                with winreg.OpenKey(parent, child_name) as child:
+                                    display, _ = winreg.QueryValueEx(child, 'DisplayName')
+                                    if 'vigem' in str(display).lower():
+                                        installed = True
+                                        details.append(str(display))
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+        except Exception:
+            pass
+    return ControllerDriverStatus(installed=installed, running=running, detail=', '.join(dict.fromkeys(details)))
+
+
+def controller_driver_installed() -> bool:
+    return controller_driver_status().installed
+
+
 def _can_create_virtual_gamepad() -> tuple[bool, str]:
     try:
         import vgamepad as vg  # type: ignore
@@ -159,6 +217,18 @@ def prepare_scan_runtime(*, download: bool = True, launch_installers: bool = Tru
     if ok:
         result.add_info('컨트롤러 런타임 확인 완료: ViGEmBus 가상 패드 생성 가능')
     else:
+        if reason.startswith('vgamepad Python'):
+            result.add_error(f'{reason}\n앱 구성 파일이 손상되었을 수 있습니다. setup.bat를 실행하거나 앱을 다시 설치하세요.')
+            return result
+        driver = controller_driver_status()
+        if driver.installed:
+            detail = f' ({driver.detail})' if driver.detail else ''
+            result.add_error(
+                f'{reason}\n'
+                f'ViGEmBus 드라이버는 설치되어 있습니다{detail}. '
+                '설치 창을 다시 열지 않습니다. Windows를 재부팅한 뒤 다시 스캔하거나, 계속 실패하면 드라이버 상태를 확인하세요.'
+            )
+            return result
         installer: Path | None = None
         try:
             installer = ensure_controller_installer(download=download)

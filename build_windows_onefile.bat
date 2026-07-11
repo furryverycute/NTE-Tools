@@ -35,7 +35,7 @@ if errorlevel 1 goto :error
 echo [3/4] Building onefile EXE...
 set TESS_ADD_DATA=
 if exist "tools\tesseract\tesseract.exe" set TESS_ADD_DATA=--add-data "tools\tesseract;tools\tesseract"
-".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --windowed --name "NTE Tool" --icon "app\assets\icon.ico" --add-data "app\assets;app\assets" %TESS_ADD_DATA% app\main.py
+".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --windowed --name "NTE Tool" --icon "app\assets\icon.ico" --add-data "app\assets;app\assets" --collect-all vgamepad %TESS_ADD_DATA% app\main.py
 if errorlevel 1 goto :error
 
 echo [4/4] Done.

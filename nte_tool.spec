@@ -1,21 +1,37 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 hiddenimports = [
     'PySide6.QtCore',
     'PySide6.QtGui',
     'PySide6.QtWidgets',
+    'vgamepad',
+    'vgamepad.win',
+    'vgamepad.win.vigem_client',
+    'vgamepad.win.vigem_commons',
+    'vgamepad.win.virtual_gamepad',
 ]
-for optional_pkg in ['mss', 'vgamepad', 'cv2']:
+for optional_pkg in ['mss', 'cv2']:
     try:
         hiddenimports += collect_submodules(optional_pkg)
     except Exception:
         pass
 
 asset_datas = []
+try:
+    asset_datas += collect_data_files(
+        'vgamepad',
+        includes=[
+            'win/vigem/client/**/*.dll',
+            'win/vigem/install/**/*.msi',
+        ],
+    )
+except Exception:
+    pass
+
 for file_path in Path('app/assets').rglob('*'):
     if file_path.is_file():
         asset_datas.append((str(file_path), str(file_path.parent)))

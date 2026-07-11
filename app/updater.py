@@ -28,30 +28,6 @@ def app_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def installed_app_roots() -> list[Path]:
-    base = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'NTE Tool'
-    # Keep the old v41 installer path so existing installed copies are still detected as installer mode.
-    return [base / APP_NAME, base / LEGACY_APP_NAME]
-
-
-def install_kind() -> str:
-    if not getattr(sys, 'frozen', False):
-        return 'portable'
-    try:
-        root = app_root().resolve()
-        for installed_root in installed_app_roots():
-            installed = installed_root.resolve()
-            if root == installed or installed in root.parents:
-                return 'installer'
-    except Exception:
-        pass
-    return 'portable'
-
-
-def install_kind_label() -> str:
-    return '설치형 exe' if install_kind() == 'installer' else '포터블'
-
-
 LEGACY_VERSION_MAP = {
     'v41': '1.4.1',
     '41': '1.4.1',
@@ -129,12 +105,13 @@ def select_asset(release: dict[str, Any], mode: str | None = None) -> dict[str, 
     assets = release.get('assets') or []
     installers = [asset for asset in assets if asset.get('type') == 'installer']
     portables = [asset for asset in assets if asset.get('type') == 'portable']
-    mode = mode or install_kind()
     if mode == 'installer':
         return installers[0] if installers else None
     if mode == 'portable':
         return portables[0] if portables else None
-    return (portables or installers or [None])[0]
+    portable_zips = [asset for asset in portables if Path(asset.get('name', '')).suffix.lower() == '.zip']
+    portable_exes = [asset for asset in portables if Path(asset.get('name', '')).suffix.lower() == '.exe']
+    return (portable_zips or portable_exes or installers or [None])[0]
 
 
 def download_asset(asset: dict[str, Any], download_dir: Path) -> Path:
@@ -154,20 +131,6 @@ def local_update_root() -> Path:
     base = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'NTE Tool' / 'updates'
     base.mkdir(parents=True, exist_ok=True)
     return base
-
-
-def portable_install_base() -> Path:
-    root = app_root()
-    parent = root.parent
-    try:
-        probe = parent / '.nte_write_probe'
-        probe.write_text('ok', encoding='utf-8')
-        probe.unlink(missing_ok=True)
-        return parent
-    except Exception:
-        base = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'NTE Tool'
-        base.mkdir(parents=True, exist_ok=True)
-        return base
 
 
 def safe_name(value: str) -> str:
@@ -216,9 +179,80 @@ def launch_path(path: Path):
         subprocess.Popen([str(path)], cwd=str(path.parent))
 
 
+def has_app_layout(root: Path) -> bool:
+    return (root / f'{APP_NAME}.exe').exists() and (root / '_internal').is_dir()
+
+
+def can_write_to(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / '.nte_update_write_probe'
+        probe.write_text('ok', encoding='utf-8')
+        probe.unlink(missing_ok=True)
+        return True
+    except Exception:
+        return False
+
+
+def quote_ps(value: Path | str) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def launch_update_helper(source_dir: Path, target_dir: Path, launch_exe: Path) -> bool:
+    source_dir = source_dir.resolve()
+    target_dir = target_dir.resolve()
+    launch_exe = launch_exe.resolve()
+    if not has_app_layout(source_dir):
+        raise RuntimeError(f'업데이트 원본 폴더 구조가 올바르지 않습니다: {source_dir}')
+    if not has_app_layout(target_dir):
+        raise RuntimeError(f'현재 앱 폴더 구조가 올바르지 않습니다: {target_dir}')
+    if source_dir == target_dir:
+        raise RuntimeError('업데이트 원본과 대상 폴더가 같습니다.')
+
+    helper_dir = local_update_root() / 'helpers'
+    helper_dir.mkdir(parents=True, exist_ok=True)
+    script_path = helper_dir / f'apply_update_{os.getpid()}.ps1'
+    log_path = helper_dir / f'apply_update_{os.getpid()}.log'
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$PidToWait = {os.getpid()}
+$Source = {quote_ps(source_dir)}
+$Target = {quote_ps(target_dir)}
+$Exe = {quote_ps(launch_exe)}
+$Log = {quote_ps(log_path)}
+Start-Transcript -Path $Log -Force | Out-Null
+try {{
+  try {{ Wait-Process -Id $PidToWait -Timeout 90 -ErrorAction SilentlyContinue }} catch {{ }}
+  Start-Sleep -Milliseconds 800
+  if (!(Test-Path -LiteralPath (Join-Path $Source '{APP_NAME}.exe'))) {{ throw '업데이트 원본 실행 파일이 없습니다.' }}
+  if (!(Test-Path -LiteralPath (Join-Path $Source '_internal'))) {{ throw '업데이트 원본 내부 파일이 없습니다.' }}
+  if (!(Test-Path -LiteralPath (Join-Path $Target '{APP_NAME}.exe'))) {{ throw '현재 앱 실행 파일을 찾지 못했습니다.' }}
+  & robocopy $Source $Target /E /IS /IT /R:2 /W:1 /NFL /NDL /NJH /NJS /NC /NS
+  $code = $LASTEXITCODE
+  if ($code -gt 7) {{ throw "파일 교체 실패: robocopy exit $code" }}
+  Start-Process -FilePath $Exe -WorkingDirectory $Target
+}} finally {{
+  Stop-Transcript | Out-Null
+}}
+"""
+    script_path.write_text(script, encoding='utf-8-sig')
+    args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script_path)]
+    if can_write_to(target_dir):
+        subprocess.Popen(['powershell.exe', *args], cwd=str(helper_dir))
+        return False
+
+    if os.name != 'nt':
+        raise RuntimeError('현재 앱 폴더에 쓰기 권한이 없습니다.')
+    import ctypes
+    params = subprocess.list2cmdline(args)
+    result = ctypes.windll.shell32.ShellExecuteW(None, 'runas', 'powershell.exe', params, str(helper_dir), 1)
+    if result <= 32:
+        raise RuntimeError('관리자 권한 업데이트 helper를 실행하지 못했습니다.')
+    return True
+
+
 def install_update(release: dict[str, Any]) -> dict[str, Any]:
-    mode = install_kind()
-    asset = select_asset(release, mode)
+    asset = select_asset(release)
     if not asset:
         return {'ok': False, 'message': '이 앱에 맞는 릴리스 파일이 없습니다.'}
 
@@ -236,19 +270,22 @@ def install_update(release: dict[str, Any]) -> dict[str, Any]:
         return {'ok': True, 'message': '포터블 실행 파일을 실행했습니다.', 'quit_current': True}
 
     if downloaded.suffix.lower() != '.zip':
-        return {'ok': False, 'message': '포터블 업데이트는 zip 또는 exe asset만 지원합니다.'}
+        return {'ok': False, 'message': '현재 폴더 업데이트는 zip asset만 지원합니다.'}
 
-    target = unique_dir(portable_install_base() / f'NTE-Tool-{safe_name(tag)}-portable')
-    target.mkdir(parents=True, exist_ok=True)
-    safe_extract_zip(downloaded, target)
-    launch = find_launch_candidate(target)
+    staging = unique_dir(work_dir / f'extracted-{safe_name(tag)}')
+    staging.mkdir(parents=True, exist_ok=True)
+    safe_extract_zip(downloaded, staging)
+    launch = find_launch_candidate(staging)
     if not launch:
-        return {'ok': False, 'message': f'포터블 파일을 풀었지만 실행 파일을 찾지 못했습니다: {target}'}
+        return {'ok': False, 'message': f'업데이트 파일을 풀었지만 실행 파일을 찾지 못했습니다: {staging}'}
 
-    launch_path(launch)
+    source_dir = launch.parent
+    target_dir = app_root()
+    target_launch = target_dir / f'{APP_NAME}.exe'
+    elevated = launch_update_helper(source_dir, target_dir, target_launch)
     return {
         'ok': True,
-        'message': f'포터블 업데이트를 새 폴더에 설치했습니다: {target}',
-        'installed_dir': str(target),
+        'message': '업데이트를 현재 앱 폴더에 적용합니다. 앱을 종료합니다.' + (' 관리자 권한 확인 창을 승인해주세요.' if elevated else ''),
+        'installed_dir': str(target_dir),
         'quit_current': True,
     }
